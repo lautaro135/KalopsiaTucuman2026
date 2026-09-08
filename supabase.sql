@@ -1,0 +1,18 @@
+create extension if not exists pgcrypto;
+create table if not exists rubros(id text primary key,nombre text not null,created_at timestamptz default now());
+create table if not exists productos(id text primary key,nombre text not null,precio numeric(12,2) not null default 0,stock integer not null default 0,rubro_id text references rubros(id) on delete set null,codigo_barras text,es_combo boolean not null default false,combo_items jsonb not null default '[]'::jsonb,created_at timestamptz default now());
+alter table productos add column if not exists codigo_barras text;
+alter table productos add column if not exists es_combo boolean not null default false;
+alter table productos add column if not exists combo_items jsonb not null default '[]'::jsonb;
+create unique index if not exists productos_codigo_barras_idx on productos(codigo_barras) where codigo_barras is not null and codigo_barras <> '';
+create table if not exists cajas(id text primary key,fecha_apertura timestamptz not null,fecha_cierre timestamptz,monto_inicial numeric(12,2) not null default 0,estado text not null default 'abierta',created_at timestamptz default now());
+create table if not exists movimientos_caja(id text primary key,caja_id text not null references cajas(id) on delete cascade,tipo text not null,monto numeric(12,2) not null default 0,motivo text,fecha timestamptz not null,created_at timestamptz default now());
+create table if not exists ventas(id text primary key,numero integer not null,fecha timestamptz not null,caja_id text not null references cajas(id) on delete restrict,items jsonb not null default '[]'::jsonb,total numeric(12,2) not null default 0,medio_pago text not null,created_at timestamptz default now());
+create table if not exists cierres_caja(id text primary key,fecha_apertura timestamptz not null,fecha_cierre timestamptz not null,monto_inicial numeric(12,2) not null default 0,por_medio jsonb not null default '{}'::jsonb,total_ventas numeric(12,2) not null default 0,ingresos_manuales numeric(12,2) not null default 0,egresos_manuales numeric(12,2) not null default 0,efectivo_esperado numeric(12,2) not null default 0,monto_contado numeric(12,2) not null default 0,diferencia numeric(12,2) not null default 0,caja_id text not null references cajas(id) on delete restrict,created_at timestamptz default now());
+alter table rubros enable row level security; alter table productos enable row level security; alter table cajas enable row level security; alter table movimientos_caja enable row level security; alter table ventas enable row level security; alter table cierres_caja enable row level security;
+create policy "demo rubros" on rubros for all using(true) with check(true);
+create policy "demo productos" on productos for all using(true) with check(true);
+create policy "demo cajas" on cajas for all using(true) with check(true);
+create policy "demo movimientos" on movimientos_caja for all using(true) with check(true);
+create policy "demo ventas" on ventas for all using(true) with check(true);
+create policy "demo cierres" on cierres_caja for all using(true) with check(true);

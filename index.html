@@ -241,6 +241,248 @@
     .main{padding:20px 16px;}
   }
 </style>
+
+<style id="modern-frontend-v1">
+/* =========================================================
+   MODERN FRONTEND V1 — visual layer only
+   Existing application logic intentionally preserved.
+   ========================================================= */
+:root{
+  --bg:#f4f7fb !important;
+  --surface:#ffffff !important;
+  --surface-2:#f8fafc !important;
+  --line:#e5eaf1 !important;
+  --line-strong:#d7dee8 !important;
+  --ink:#172033 !important;
+  --muted:#687386 !important;
+  --primary:#173b70 !important;
+  --primary-2:#245da4 !important;
+  --primary-soft:#edf4ff !important;
+  --success:#16845b !important;
+  --success-soft:#eaf8f2 !important;
+  --warning:#b77908 !important;
+  --warning-soft:#fff7df !important;
+  --danger:#c63c45 !important;
+  --danger-soft:#fff0f1 !important;
+  --shadow-sm:0 1px 2px rgba(16,24,40,.04),0 3px 12px rgba(16,24,40,.035) !important;
+  --shadow-md:0 8px 30px rgba(16,24,40,.07) !important;
+  --radius:14px !important;
+  --radius-sm:10px !important;
+}
+
+/* Base */
+html,body{background:var(--bg)!important;color:var(--ink)!important;}
+body{
+  font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;
+  letter-spacing:-.01em;
+}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit}
+
+/* Sidebar */
+aside,.sidebar{
+  background:#fff!important;
+  border-right:1px solid var(--line)!important;
+  box-shadow:none!important;
+}
+aside h1,.sidebar h1{letter-spacing:-.035em!important}
+aside a,.sidebar a,aside button,.sidebar button{
+  border-radius:10px!important;
+  transition:background .16s ease,color .16s ease,transform .16s ease!important;
+}
+aside a:hover,.sidebar a:hover,aside button:hover,.sidebar button:hover{
+  background:#f2f5f9!important;
+}
+aside a.active,.sidebar a.active,
+aside button.active,.sidebar button.active{
+  background:var(--primary-soft)!important;
+  color:var(--primary)!important;
+  font-weight:700!important;
+  box-shadow:inset 3px 0 0 var(--primary)!important;
+}
+
+/* Main shell */
+main,.main,.content{background:var(--bg)!important}
+.page-header,.header{
+  background:rgba(244,247,251,.92)!important;
+  border-bottom:1px solid var(--line)!important;
+  backdrop-filter:blur(10px);
+}
+h1,h2,h3,h4{color:var(--ink)!important;letter-spacing:-.025em!important}
+h1{font-weight:750!important}
+p,.muted,.subtitle{color:var(--muted)!important}
+
+/* Cards */
+.card,.panel,.metric-card,.stat-card,
+[class*="card"]{
+  border-color:var(--line)!important;
+}
+.card,.panel,.metric-card,.stat-card{
+  background:var(--surface)!important;
+  border-radius:var(--radius)!important;
+  box-shadow:var(--shadow-sm)!important;
+}
+.card:hover,.panel:hover,.metric-card:hover,.stat-card:hover{
+  box-shadow:var(--shadow-md)!important;
+}
+
+/* Buttons */
+button,.btn{
+  border-radius:10px!important;
+  min-height:40px;
+  transition:transform .12s ease,box-shadow .12s ease,background .12s ease!important;
+}
+button:active,.btn:active{transform:translateY(1px)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:3px solid rgba(37,99,235,.18)!important;
+  outline-offset:1px!important;
+}
+.btn-primary,.primary,.button-primary{
+  background:var(--primary)!important;
+  color:#fff!important;
+  border-color:var(--primary)!important;
+  box-shadow:0 4px 12px rgba(23,59,112,.16)!important;
+}
+.btn-primary:hover,.primary:hover,.button-primary:hover{
+  background:#102f5c!important;
+}
+
+/* Inputs */
+input,select,textarea{
+  background:#fff!important;
+  border:1px solid var(--line-strong)!important;
+  border-radius:10px!important;
+  color:var(--ink)!important;
+  min-height:42px;
+}
+input::placeholder,textarea::placeholder{color:#98a2b3!important}
+input:focus,select:focus,textarea:focus{
+  border-color:#7ea2d4!important;
+  box-shadow:0 0 0 3px rgba(36,93,164,.10)!important;
+}
+
+/* Tables */
+table{
+  border-collapse:separate!important;
+  border-spacing:0!important;
+  width:100%!important;
+}
+thead th{
+  background:#f8fafc!important;
+  color:#667085!important;
+  font-size:12px!important;
+  font-weight:700!important;
+  text-transform:uppercase;
+  letter-spacing:.055em;
+  border-bottom:1px solid var(--line)!important;
+}
+tbody td{border-bottom:1px solid #edf0f4!important}
+tbody tr:hover td{background:#fafcff!important}
+
+/* Status */
+.badge,.pill,.status{
+  border-radius:999px!important;
+  font-weight:700!important;
+  font-size:12px!important;
+}
+.badge-success,.status-success{background:var(--success-soft)!important;color:var(--success)!important}
+.badge-warning,.status-warning{background:var(--warning-soft)!important;color:var(--warning)!important}
+.badge-danger,.status-danger{background:var(--danger-soft)!important;color:var(--danger)!important}
+
+/* Modal */
+.modal-backdrop,.overlay{
+  background:rgba(15,23,42,.48)!important;
+  backdrop-filter:blur(4px);
+}
+.modal,.dialog{
+  background:#fff!important;
+  border:1px solid var(--line)!important;
+  border-radius:18px!important;
+  box-shadow:0 24px 70px rgba(15,23,42,.20)!important;
+}
+
+/* Scrollbars */
+*{scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px}
+*::-webkit-scrollbar-track{background:transparent}
+
+/* POS / ticket emphasis */
+#ticket,.ticket,.sale-ticket{
+  background:#fff!important;
+  border:1px solid var(--line)!important;
+  border-radius:16px!important;
+  box-shadow:var(--shadow-sm)!important;
+}
+#ticket .total,.ticket .total,.sale-ticket .total{
+  color:var(--primary)!important;
+  font-weight:800!important;
+}
+#ticket button,.ticket button,.sale-ticket button{
+  min-height:42px;
+}
+
+/* Caja */
+.cash-card,.caja-card{
+  border-radius:14px!important;
+  background:#fff!important;
+  border:1px solid var(--line)!important;
+}
+
+/* Product grid */
+.product-card{
+  background:#fff!important;
+  border:1px solid var(--line)!important;
+  border-radius:14px!important;
+  box-shadow:var(--shadow-sm)!important;
+  transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease!important;
+}
+.product-card:hover{
+  transform:translateY(-2px);
+  border-color:#bfd0e6!important;
+  box-shadow:var(--shadow-md)!important;
+}
+
+/* Empty states */
+.empty-state{
+  border:1px dashed #cbd5e1!important;
+  background:#fbfcfe!important;
+  border-radius:14px!important;
+}
+
+/* Mobile */
+@media(max-width:900px){
+  aside,.sidebar{
+    border-right:0!important;
+    border-bottom:1px solid var(--line)!important;
+  }
+  .page-header,.header{
+    position:sticky;
+    top:0;
+    z-index:20;
+  }
+}
+@media(max-width:640px){
+  body{font-size:14px!important}
+  .page-header,.header{padding:12px!important}
+  .card,.panel,.metric-card,.stat-card{border-radius:12px!important}
+  table{min-width:680px!important}
+}
+</style>
+
+
+<style id="collections-v2-style">
+.modern-header{align-items:center!important}
+.eyebrow{font-size:11px;font-weight:800;letter-spacing:.11em;color:#6b7b91;margin-bottom:6px}
+.header-actions{display:flex;gap:8px}
+.modern-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:18px 0}
+.modern-kpi{display:flex;gap:13px;align-items:flex-start;background:#fff;border:1px solid #e5eaf1;border-radius:14px;padding:17px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.modern-kpi span{display:block;font-size:12px;color:#687386;margin-bottom:5px}.modern-kpi strong{display:block;font-size:23px;letter-spacing:-.035em;color:#172033}.modern-kpi small{display:block;color:#8490a1;margin-top:6px}.modern-kpi .positive{color:#16845b}.kpi-icon{width:36px;height:36px;border-radius:10px;background:#edf4ff;color:#173b70;display:grid;place-items:center;font-weight:800;flex:0 0 auto}.kpi-icon.blue{background:#eef7ff;color:#245da4}.kpi-icon.amber{background:#fff7df;color:#b77908}.kpi-icon.red{background:#fff0f1;color:#c63c45}.modern-kpi.danger{border-color:#f2d9dc}
+.dashboard-grid{display:grid;grid-template-columns:1.7fr 1fr;gap:16px;margin-bottom:16px}.dashboard-panel{background:#fff;border:1px solid #e5eaf1;border-radius:14px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:18px;margin-bottom:16px}.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}.panel-head h3{margin:0 0 4px;font-size:16px}.panel-head p{margin:0;font-size:12px;color:#8490a1}.mini-filter,.result-count{font-size:12px;color:#687386;background:#f8fafc;border:1px solid #e5eaf1;border-radius:8px;padding:7px 9px}.fake-chart{height:245px;display:flex;gap:10px}.chart-y{width:42px;display:flex;flex-direction:column;justify-content:space-between;font-size:10px;color:#98a2b3;padding-bottom:24px}.chart-area{position:relative;flex:1;border-bottom:1px solid #e5eaf1;background:repeating-linear-gradient(to bottom,transparent 0,transparent 47px,#eef2f6 48px)}.chart-line{position:absolute;left:2%;right:2%;top:30%;height:55%;border-top:3px solid #245da4;transform:skewY(-9deg);clip-path:polygon(0 55%,14% 40%,28% 67%,43% 25%,57% 46%,72% 12%,86% 34%,100% 0,100% 7%,86% 41%,72% 19%,57% 53%,43% 32%,28% 74%,14% 47%,0 62%)}.chart-points{position:absolute;left:3%;right:3%;top:28%;display:flex;justify-content:space-between}.chart-points i{width:8px;height:8px;border-radius:50%;background:#245da4;border:2px solid #fff;box-shadow:0 0 0 1px #245da4}.chart-x{position:absolute;bottom:-24px;left:0;right:0;display:flex;justify-content:space-between;font-size:10px;color:#98a2b3}.status-summary{display:flex;align-items:center;justify-content:center;gap:28px;min-height:220px}.donut{width:145px;height:145px;border-radius:50%;background:conic-gradient(#16845b 0 62%,#e7b443 62% 87%,#c63c45 87% 100%);display:grid;place-items:center}.donut:after{content:"";width:96px;height:96px;background:#fff;border-radius:50%;position:absolute}.donut div{position:relative;z-index:1;text-align:center}.donut strong{display:block;font-size:22px}.donut span{font-size:11px;color:#687386}.status-legend{width:150px}.status-legend div{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #eef1f4;font-size:12px}.status-legend b{font-weight:600}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px}.dot.green{background:#16845b}.dot.yellow{background:#e7b443}.dot.red{background:#c63c45}.link-btn{border:0;background:transparent;color:#245da4;font-weight:700;cursor:pointer}.priority-list{display:flex;flex-direction:column}.priority-row{display:grid;grid-template-columns:auto 1.4fr 1fr auto auto auto;align-items:center;gap:14px;padding:12px 0;border-top:1px solid #eef1f4}.customer-avatar{width:36px;height:36px;border-radius:50%;background:#edf4ff;color:#245da4;display:grid;place-items:center;font-size:11px;font-weight:800}.customer-avatar.big{width:44px;height:44px}.customer-main span,.table-client span{display:block;color:#8490a1;font-size:11px;margin-top:3px}.due span{display:block;font-size:10px;color:#98a2b3}.due strong{font-size:12px}.status-pill{display:inline-flex;align-items:center;padding:5px 9px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap}.status-pill.danger{background:#fff0f1;color:#c63c45}.status-pill.warning{background:#fff7df;color:#a66f08}.status-pill.success{background:#eaf8f2;color:#16845b}.amount,.table-amount{font-size:13px}.row-action,.icon-action{border:1px solid #dce3ec;background:#fff;color:#173b70;padding:7px 10px;min-height:34px;border-radius:8px;font-weight:700;cursor:pointer}.row-action:hover{background:#edf4ff}.icon-action{font-size:17px;padding:4px 9px}.collection-toolbar{display:grid;grid-template-columns:1fr 180px 200px;gap:10px;margin:16px 0}.search-box{height:42px;background:#fff;border:1px solid #d7dee8;border-radius:10px;display:flex;align-items:center;padding:0 12px;gap:8px}.search-box span{font-size:19px;color:#8490a1}.search-box input{border:0!important;outline:0!important;box-shadow:none!important;width:100%;min-height:38px}.collection-table-panel{padding-bottom:8px}.table-scroll{overflow:auto}.collection-table th,.collection-table td{padding:12px 10px;text-align:left}.table-client{display:flex;align-items:center;gap:10px}.table-actions{display:flex;justify-content:flex-end;gap:5px}.frontend-modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(4px);display:grid;place-items:center;z-index:1000;padding:20px}.frontend-modal{width:min(520px,100%);background:#fff;border:1px solid #e5eaf1;border-radius:18px;box-shadow:0 24px 70px rgba(15,23,42,.2);padding:22px}.modal-top{display:flex;justify-content:space-between;align-items:flex-start}.modal-top h3{margin:2px 0 0}.modal-close{border:0;background:#f3f5f8;border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:20px}.modal-client{display:flex;align-items:center;gap:11px;background:#f8fafc;border:1px solid #edf0f4;border-radius:12px;padding:12px;margin:18px 0}.modal-client span{display:block;font-size:11px;color:#8490a1;margin-top:3px}.modal-balance{margin-left:auto;font-size:17px}.frontend-modal label{display:block;font-size:12px;font-weight:700;color:#4b5565;margin:13px 0}.frontend-modal label input,.frontend-modal label select,.frontend-modal label textarea{width:100%;margin-top:6px}.frontend-modal textarea{padding:10px;resize:vertical}.modal-note{font-size:11px;color:#8490a1;background:#f8fafc;border-radius:9px;padding:10px;margin-top:14px}.modal-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.frontend-toast{position:fixed;right:22px;bottom:22px;background:#172033;color:#fff;padding:12px 16px;border-radius:10px;box-shadow:0 10px 30px rgba(15,23,42,.18);z-index:1100;font-size:13px}
+@media(max-width:1000px){.modern-kpis{grid-template-columns:repeat(2,1fr)}.dashboard-grid{grid-template-columns:1fr}.collection-toolbar{grid-template-columns:1fr 1fr}.collection-toolbar .search-box{grid-column:1/-1}}
+@media(max-width:640px){.modern-kpis{grid-template-columns:1fr}.collection-toolbar{grid-template-columns:1fr}.priority-row{grid-template-columns:auto 1fr auto}.priority-row .due,.priority-row .amount{display:none}.priority-row .status-pill{grid-column:2}.status-summary{flex-direction:column;gap:15px}.dashboard-panel{padding:14px}.frontend-modal{padding:17px}}
+</style>
+
 </head>
 <body>
 <div id="app"></div>
@@ -365,8 +607,10 @@ async function deleteRow(table,id){
 
 /* ============================= NAV ============================= */
 const NAV = [
+  {id:'dashboard', label:'Dashboard', icon:'&#9632;'},
   {id:'vender', label:'Vender', icon:'&#128179;'},
   {id:'ventas', label:'Ventas', icon:'&#128202;'},
+  {id:'cobranzas', label:'Cobranzas', icon:'&#128176;'},
   {id:'caja', label:'Caja', icon:'&#128176;'},
   {id:'productos', label:'Productos', icon:'&#128230;'},
   {id:'rubros', label:'Rubros', icon:'&#127991;'},
@@ -418,6 +662,8 @@ function bindGlobal(){
 
 function renderView(){
   switch(state.view){
+    case 'dashboard': return renderDashboard();
+    case 'cobranzas': return renderCobranzas();
     case 'vender': return renderVender();
     case 'ventas': return renderVentasLista();
     case 'caja': return renderCaja();
@@ -430,6 +676,8 @@ function renderView(){
 
 function bindView(){
   switch(state.view){
+    case 'dashboard': return bindDashboard();
+    case 'cobranzas': return bindCobranzas();
     case 'vender': return bindVender();
     case 'ventas': return bindVentasLista();
     case 'caja': return bindCaja();
@@ -437,6 +685,195 @@ function bindView(){
     case 'rubros': return bindRubros();
     case 'historial': return bindHistorial();
   }
+}
+
+
+/* ============================= FRONTEND DASHBOARD ============================= */
+function renderDashboard(){
+  const total = (state.ventas||[]).reduce((s,v)=>s + Number(v.total||v.monto||0),0);
+  const ventas = state.ventas||[];
+  const hoy = new Date().toLocaleDateString('es-AR');
+  return `
+    <div class="page-header modern-header">
+      <div>
+        <div class="eyebrow">RESUMEN GENERAL</div>
+        <h2>Dashboard</h2>
+        <p>Una vista rápida de ventas, caja y cobranzas.</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-primary" data-nav="cobranzas">+ Registrar cobro</button>
+      </div>
+    </div>
+
+    <section class="modern-kpis">
+      <article class="modern-kpi">
+        <div class="kpi-icon">↗</div>
+        <div><span>Ventas acumuladas</span><strong>$ ${money(total)}</strong><small>Según ventas cargadas</small></div>
+      </article>
+      <article class="modern-kpi">
+        <div class="kpi-icon blue">●</div>
+        <div><span>Cobrado hoy</span><strong>$ 95.000</strong><small class="positive">+12,4% vs. período anterior</small></div>
+      </article>
+      <article class="modern-kpi">
+        <div class="kpi-icon amber">!</div>
+        <div><span>Por cobrar</span><strong>$ 430.000</strong><small>12 cuentas pendientes</small></div>
+      </article>
+      <article class="modern-kpi danger">
+        <div class="kpi-icon red">!</div>
+        <div><span>Vencido</span><strong>$ 185.000</strong><small>5 cuentas requieren atención</small></div>
+      </article>
+    </section>
+
+    <section class="dashboard-grid">
+      <article class="dashboard-panel chart-panel">
+        <div class="panel-head"><div><h3>Evolución de cobros</h3><p>Últimos 7 días</p></div><span class="mini-filter">Esta semana ▾</span></div>
+        <div class="fake-chart">
+          <div class="chart-y"><span>$120k</span><span>$90k</span><span>$60k</span><span>$30k</span><span>$0</span></div>
+          <div class="chart-area">
+            <div class="chart-line"></div>
+            <div class="chart-points"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="chart-x"><span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="dashboard-panel">
+        <div class="panel-head"><div><h3>Estado de cuentas</h3><p>Resumen de cobranzas</p></div></div>
+        <div class="status-summary">
+          <div class="donut"><div><strong>62%</strong><span>al día</span></div></div>
+          <div class="status-legend">
+            <div><b><i class="dot green"></i>Pagadas</b><strong>62%</strong></div>
+            <div><b><i class="dot yellow"></i>Pendientes</b><strong>25%</strong></div>
+            <div><b><i class="dot red"></i>Vencidas</b><strong>13%</strong></div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="dashboard-panel">
+      <div class="panel-head">
+        <div><h3>Atención prioritaria</h3><p>Cuentas que requieren seguimiento</p></div>
+        <button class="link-btn" data-nav="cobranzas">Ver todas →</button>
+      </div>
+      ${renderDebtRows()}
+    </section>
+  `;
+}
+function bindDashboard(){
+  document.querySelectorAll('[data-nav="cobranzas"]').forEach(b=>b.addEventListener('click',()=>setView('cobranzas')));
+}
+function money(n){ return Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0}); }
+function renderDebtRows(){
+  const rows = [
+    ['Juan Pérez','FC-000124','25/09/2026','Vencido','$ 85.000','danger'],
+    ['María López','FC-000125','28/09/2026','Pendiente','$ 42.000','warning'],
+    ['Pedro Gómez','FC-000126','30/09/2026','Pendiente','$ 67.000','warning']
+  ];
+  return `<div class="priority-list">${rows.map(r=>`
+    <div class="priority-row">
+      <div class="customer-avatar">${r[0].split(' ').map(x=>x[0]).slice(0,2).join('')}</div>
+      <div class="customer-main"><strong>${r[0]}</strong><span>${r[1]}</span></div>
+      <div class="due"><span>Vencimiento</span><strong>${r[2]}</strong></div>
+      <span class="status-pill ${r[5]}">${r[3]}</span>
+      <strong class="amount">${r[4]}</strong>
+      <button class="row-action" data-nav="cobranzas">Cobrar</button>
+    </div>`).join('')}</div>`;
+}
+
+/* ============================= COBRANZAS — FRONTEND ONLY ============================= */
+const MOCK_COBROS = [
+  {id:'FC-000124',cliente:'Juan Pérez',vence:'25/09/2026',estado:'Vencido',monto:85000,telefono:'381 555 0101'},
+  {id:'FC-000125',cliente:'María López',vence:'28/09/2026',estado:'Pendiente',monto:42000,telefono:'381 555 0122'},
+  {id:'FC-000126',cliente:'Pedro Gómez',vence:'30/09/2026',estado:'Pendiente',monto:67000,telefono:'381 555 0188'},
+  {id:'FC-000127',cliente:'Comercial Norte',vence:'02/10/2026',estado:'Pendiente',monto:125000,telefono:'381 555 0220'},
+  {id:'FC-000118',cliente:'Lucía Fernández',vence:'18/09/2026',estado:'Pagado',monto:55000,telefono:'381 555 0340'}
+];
+
+function renderCobranzas(){
+  return `
+    <div class="page-header modern-header">
+      <div>
+        <div class="eyebrow">CUENTAS POR COBRAR</div>
+        <h2>Cobranzas</h2>
+        <p>Gestioná pendientes, vencimientos y pagos desde una sola pantalla.</p>
+      </div>
+      <button class="btn btn-primary" id="openCobroModal">+ Registrar cobro</button>
+    </div>
+
+    <section class="modern-kpis cobranzas-kpis">
+      <article class="modern-kpi"><div class="kpi-icon blue">↗</div><div><span>Total pendiente</span><strong>$ 430.000</strong><small>12 cuentas abiertas</small></div></article>
+      <article class="modern-kpi danger"><div class="kpi-icon red">!</div><div><span>Total vencido</span><strong>$ 185.000</strong><small>5 clientes</small></div></article>
+      <article class="modern-kpi"><div class="kpi-icon">✓</div><div><span>Cobrado este mes</span><strong>$ 1.250.000</strong><small class="positive">+8,2%</small></div></article>
+      <article class="modern-kpi"><div class="kpi-icon amber">◷</div><div><span>Próximos 7 días</span><strong>$ 234.000</strong><small>7 vencimientos</small></div></article>
+    </section>
+
+    <div class="collection-toolbar">
+      <div class="search-box"><span>⌕</span><input id="cobroSearch" placeholder="Buscar cliente, comprobante o teléfono..."></div>
+      <select id="cobroStatus"><option value="">Todos los estados</option><option>Pagado</option><option>Pendiente</option><option>Vencido</option></select>
+      <select><option>Todos los vencimientos</option><option>Hoy</option><option>Esta semana</option><option>Este mes</option></select>
+    </div>
+
+    <section class="dashboard-panel collection-table-panel">
+      <div class="panel-head"><div><h3>Cuentas</h3><p>Listado de obligaciones y pagos</p></div><span class="result-count" id="cobroCount">5 registros</span></div>
+      <div class="table-scroll"><table class="collection-table"><thead><tr><th>Cliente</th><th>Comprobante</th><th>Vencimiento</th><th>Estado</th><th>Saldo</th><th></th></tr></thead>
+      <tbody id="cobroTableBody">${renderCobroRows(MOCK_COBROS)}</tbody></table></div>
+    </section>
+  `;
+}
+function renderCobroRows(rows){
+  return rows.map((r,i)=>`
+    <tr data-cobro-row data-search="${(r.cliente+' '+r.id+' '+r.telefono).toLowerCase()}" data-status="${r.estado}">
+      <td><div class="table-client"><div class="customer-avatar">${r.cliente.split(' ').map(x=>x[0]).slice(0,2).join('')}</div><div><strong>${r.cliente}</strong><span>${r.telefono}</span></div></div></td>
+      <td><strong>${r.id}</strong></td>
+      <td>${r.vence}</td>
+      <td><span class="status-pill ${r.estado==='Vencido'?'danger':r.estado==='Pagado'?'success':'warning'}">${r.estado}</span></td>
+      <td><strong class="table-amount">$ ${money(r.monto)}</strong></td>
+      <td><div class="table-actions">${r.estado!=='Pagado'?`<button class="row-action collect-action" data-id="${r.id}">Cobrar</button>`:''}<button class="icon-action" title="Ver estado de cuenta">⋯</button></div></td>
+    </tr>`).join('');
+}
+function bindCobranzas(){
+  const search=document.getElementById('cobroSearch');
+  const status=document.getElementById('cobroStatus');
+  function filter(){
+    const q=(search?.value||'').toLowerCase().trim(), st=status?.value||'';
+    let visible=0;
+    document.querySelectorAll('[data-cobro-row]').forEach(row=>{
+      const okQ=!q || row.dataset.search.includes(q);
+      const okS=!st || row.dataset.status===st;
+      row.style.display=okQ&&okS?'':'none';
+      if(okQ&&okS) visible++;
+    });
+    const c=document.getElementById('cobroCount'); if(c)c.textContent=visible+' registros';
+  }
+  search?.addEventListener('input',filter); status?.addEventListener('change',filter);
+  document.getElementById('openCobroModal')?.addEventListener('click',()=>openCobroFrontendModal());
+  document.querySelectorAll('.collect-action').forEach(b=>b.addEventListener('click',()=>openCobroFrontendModal(b.dataset.id)));
+  document.querySelectorAll('.row-action[data-nav="cobranzas"]').forEach(b=>b.addEventListener('click',()=>setView('cobranzas')));
+}
+function openCobroFrontendModal(id){
+  const item=MOCK_COBROS.find(x=>x.id===id)||MOCK_COBROS[0];
+  const existing=document.getElementById('frontendCobroModal'); existing?.remove();
+  const el=document.createElement('div'); el.id='frontendCobroModal'; el.className='frontend-modal-backdrop';
+  el.innerHTML=`
+    <div class="frontend-modal">
+      <div class="modal-top"><div><span class="eyebrow">NUEVO COBRO</span><h3>Registrar pago</h3></div><button class="modal-close" aria-label="Cerrar">×</button></div>
+      <div class="modal-client"><div class="customer-avatar big">${item.cliente.split(' ').map(x=>x[0]).slice(0,2).join('')}</div><div><strong>${item.cliente}</strong><span>${item.id} · Vencimiento ${item.vence}</span></div><strong class="modal-balance">$ ${money(item.monto)}</strong></div>
+      <label>Monto a cobrar<input id="frontendMonto" value="${item.monto}" inputmode="decimal"></label>
+      <label>Medio de pago<select><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option></select></label>
+      <label>Fecha del cobro<input type="date" value="2026-09-25"></label>
+      <label>Observaciones<textarea rows="3" placeholder="Opcional"></textarea></label>
+      <div class="modal-note">Esta pantalla es una maqueta frontend. No registra datos en Supabase.</div>
+      <div class="modal-footer"><button class="btn" id="cancelFrontendCobro">Cancelar</button><button class="btn btn-primary" id="confirmFrontendCobro">Confirmar cobro</button></div>
+    </div>`;
+  document.body.appendChild(el);
+  const close=()=>el.remove();
+  el.querySelector('.modal-close').onclick=close;
+  el.querySelector('#cancelFrontendCobro').onclick=close;
+  el.querySelector('#confirmFrontendCobro').onclick=()=>{ close(); toastFrontend('Cobro preparado correctamente'); };
+}
+function toastFrontend(msg){
+  const t=document.createElement('div');t.className='frontend-toast';t.textContent=msg;document.body.appendChild(t);
+  setTimeout(()=>t.remove(),2400);
 }
 
 /* ============================= VENDER ============================= */
@@ -1724,5 +2161,22 @@ function enfocarConCursorAlFinal(id){
   render();
 })();
 </script>
+
+<script id="modern-frontend-v1-js">
+(function(){
+  function enhanceUI(){
+    document.querySelectorAll('button').forEach(function(btn){
+      var t=(btn.textContent||'').trim().toLowerCase();
+      if(t==='cobrar' || t.includes('registrar cobro')){
+        btn.classList.add('btn-primary');
+        btn.setAttribute('data-primary-action','true');
+      }
+    });
+  }
+  enhanceUI();
+  new MutationObserver(enhanceUI).observe(document.body,{childList:true,subtree:true});
+})();
+</script>
+
 </body>
 </html>

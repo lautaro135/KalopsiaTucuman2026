@@ -692,6 +692,10 @@ const state = {
   busquedaVender: '',
   busquedaProductos: '',
   filtroVentas: 'hoy',
+  filtroRubro: 'hoy',
+  rubroDesde: '',
+  rubroHasta: '',
+  rubroAbierto: null,
 };
 
 /* ============================= COMBOS / STOCK ============================= */
@@ -786,6 +790,7 @@ const NAV = [
   {id:'dashboard', label:'Dashboard', icon:'&#9632;'},
   {id:'vender', label:'Vender', icon:'&#128179;'},
   {id:'ventas', label:'Ventas', icon:'&#128202;'},
+  {id:'porrubro', label:'Ventas por rubro', icon:'&#127991;'},
   {id:'cobranzas', label:'Cobranzas', icon:'&#128176;'},
   {id:'caja', label:'Caja', icon:'&#128176;'},
   {id:'productos', label:'Productos', icon:'&#128230;'},
@@ -842,6 +847,7 @@ function renderView(){
     case 'cobranzas': return renderCobranzas();
     case 'vender': return renderVender();
     case 'ventas': return renderVentasLista();
+    case 'porrubro': return renderVentasPorRubro();
     case 'caja': return renderCaja();
     case 'productos': return renderProductos();
     case 'rubros': return renderRubros();
@@ -856,6 +862,7 @@ function bindView(){
     case 'cobranzas': return bindCobranzas();
     case 'vender': return bindVender();
     case 'ventas': return bindVentasLista();
+    case 'porrubro': return bindVentasPorRubro();
     case 'caja': return bindCaja();
     case 'productos': return bindProductos();
     case 'rubros': return bindRubros();
@@ -2269,6 +2276,133 @@ function bindVentasLista(){
     row.addEventListener('click', ()=>{
       const detail = document.getElementById('detail-venta-'+row.dataset.toggleVenta);
       detail.style.display = detail.style.display==='none' ? 'block' : 'none';
+    });
+  });
+}
+
+/* ============================= VENTAS POR RUBRO ============================= */
+function rangoVentasRubro(){
+  const ahora = new Date();
+  const inicioHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate()).getTime();
+  const DIA = 24*60*60*1000;
+  const f = state.filtroRubro;
+  if(f==='hoy') return {desde:inicioHoy, hasta:Infinity};
+  if(f==='semana') return {desde:inicioHoy-6*DIA, hasta:Infinity};
+  if(f==='mes') return {desde:new Date(ahora.getFullYear(), ahora.getMonth(), 1).getTime(), hasta:Infinity};
+  if(f==='custom'){
+    const p = s => { const [y,m,d] = s.split('-').map(Number); return new Date(y,m-1,d).getTime(); };
+    const desde = state.rubroDesde ? p(state.rubroDesde) : -Infinity;
+    const hasta = state.rubroHasta ? p(state.rubroHasta)+DIA-1 : Infinity;
+    return {desde, hasta};
+  }
+  return {desde:-Infinity, hasta:Infinity};
+}
+function calcularVentasPorRubro(){
+  const {desde, hasta} = rangoVentasRubro();
+  const ventas = state.ventas.filter(v=>{ const t = new Date(v.fecha).getTime(); return t>=desde && t<=hasta; });
+  const mapa = {};
+  let totalGeneral = 0;
+  ventas.forEach(v=>{
+    const sumaItems = v.items.reduce((s,i)=>s+i.precio*i.cantidad,0);
+    // si la venta tuvo descuento/recargo, se reparte proporcionalmente entre sus items
+    const factor = sumaItems>0 ? v.total/sumaItems : 1;
+    v.items.forEach(i=>{
+      const prod = state.productos.find(p=>p.id===i.productoId);
+      const rubro = prod && prod.rubroId ? state.rubros.find(r=>r.id===prod.rubroId) : null;
+      const key = rubro ? rubro.id : 'sin-rubro';
+      const nombre = rubro ? rubro.nombre : 'Sin rubro';
+      const monto = i.precio*i.cantidad*factor;
+      if(!mapa[key]) mapa[key] = {key, nombre, monto:0, unidades:0, productos:{}};
+      mapa[key].monto += monto;
+      mapa[key].unidades += i.cantidad;
+      const pk = i.productoId || i.nombre;
+      if(!mapa[key].productos[pk]) mapa[key].productos[pk] = {nombre:i.nombre, unidades:0, monto:0};
+      mapa[key].productos[pk].unidades += i.cantidad;
+      mapa[key].productos[pk].monto += monto;
+      totalGeneral += monto;
+    });
+  });
+  const filas = Object.values(mapa).sort((a,b)=>b.monto-a.monto);
+  return {filas, totalGeneral, cantVentas: ventas.length};
+}
+function renderVentasPorRubro(){
+  const {filas, totalGeneral, cantVentas} = calcularVentasPorRubro();
+  const tabs = [['hoy','Hoy'],['semana','Últimos 7 días'],['mes','Este mes'],['todas','Todas'],['custom','Elegir fechas']];
+  const maxMonto = filas.length ? filas[0].monto : 0;
+  return `
+    <div class="page-header">
+      <div><h2>Ventas por rubro</h2><p>Cuánta plata vendiste en cada rubro (perfumes, cremas, etc.).</p></div>
+    </div>
+    <div class="rubro-tabs">
+      ${tabs.map(([k,l])=>`<button class="rubro-tab ${state.filtroRubro===k?'active':''}" data-filtro-rubro="${k}">${l}</button>`).join('')}
+    </div>
+    ${state.filtroRubro==='custom' ? `
+      <div class="card" style="padding:12px 18px;margin-bottom:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+        <label style="font-size:13px;color:var(--ink-soft);">Desde <input type="date" id="rubro-desde" value="${state.rubroDesde}"></label>
+        <label style="font-size:13px;color:var(--ink-soft);">Hasta <input type="date" id="rubro-hasta" value="${state.rubroHasta}"></label>
+      </div>
+    ` : ''}
+    <div class="card" style="padding:14px 18px;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;">
+        <span style="color:var(--ink-soft);font-size:13px;">${cantVentas} venta(s) en el período</span>
+        <strong class="mono" style="font-size:20px;">$ ${money(totalGeneral)}</strong>
+      </div>
+    </div>
+    ${filas.length===0 ? `
+      <div class="empty-state">
+        <h3>No hay ventas en este período</h3>
+        <p>Cuando registres ventas desde "Vender" las vas a ver agrupadas por rubro.</p>
+      </div>
+    ` : `
+      <div class="card">
+        <table>
+          <thead><tr><th>Rubro</th><th>Unidades</th><th>Vendido</th><th style="width:32%;">% del total</th></tr></thead>
+          <tbody>
+            ${filas.map(f=>{
+              const pct = totalGeneral>0 ? f.monto/totalGeneral*100 : 0;
+              const abierto = state.rubroAbierto===f.key;
+              const prods = Object.values(f.productos).sort((a,b)=>b.monto-a.monto);
+              return `
+                <tr data-toggle-rubro="${escapeHtml(f.key)}" style="cursor:pointer;">
+                  <td><strong>${abierto?'▾':'▸'} ${escapeHtml(f.nombre)}</strong></td>
+                  <td>${f.unidades}</td>
+                  <td class="mono"><strong>$ ${money(f.monto)}</strong></td>
+                  <td>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <div style="flex:1;height:8px;background:var(--teal-tint);border-radius:4px;overflow:hidden;"><div style="width:${maxMonto>0?(f.monto/maxMonto*100):0}%;height:100%;background:var(--teal);"></div></div>
+                      <span class="mono" style="font-size:12px;min-width:44px;text-align:right;">${pct.toFixed(1)}%</span>
+                    </div>
+                  </td>
+                </tr>
+                ${abierto ? prods.map(p=>`
+                  <tr style="background:var(--paper);">
+                    <td style="padding-left:28px;color:var(--ink-soft);font-size:13px;">${escapeHtml(p.nombre)}</td>
+                    <td style="font-size:13px;">${p.unidades}</td>
+                    <td class="mono" style="font-size:13px;">$ ${money(p.monto)}</td>
+                    <td></td>
+                  </tr>
+                `).join('') : ''}
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <p style="color:var(--ink-soft);font-size:12px;margin-top:10px;">Tocá un rubro para ver qué productos vendiste. Los montos incluyen descuentos o recargos aplicados en cada venta.</p>
+    `}
+  `;
+}
+function bindVentasPorRubro(){
+  document.querySelectorAll('[data-filtro-rubro]').forEach(b=>{
+    b.addEventListener('click', ()=>{ state.filtroRubro = b.dataset.filtroRubro; state.rubroAbierto = null; render(); });
+  });
+  const d = document.getElementById('rubro-desde');
+  const h = document.getElementById('rubro-hasta');
+  if(d) d.addEventListener('change', ()=>{ state.rubroDesde = d.value; render(); });
+  if(h) h.addEventListener('change', ()=>{ state.rubroHasta = h.value; render(); });
+  document.querySelectorAll('[data-toggle-rubro]').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      state.rubroAbierto = state.rubroAbierto===row.dataset.toggleRubro ? null : row.dataset.toggleRubro;
+      render();
     });
   });
 }

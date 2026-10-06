@@ -1207,6 +1207,7 @@ const TIPO_MOV={entrada_compra:'Compra',entrada_devolucion:'Devolución de clien
 const $$=(s,f)=>document.querySelectorAll(s).forEach(f);
 const V=id=>document.getElementById(id).value.trim();
 const N=x=>Number(x)||0;
+const moneda=n=>(Number(n)||0).toLocaleString('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:2});
 const hoyISO=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 function getUsuario(){
   let u=localStorage.getItem('pos_usuario');
@@ -1258,10 +1259,10 @@ function renderProveedores(){
     const ct=state.contactos.find(c=>c.proveedor_id===p.id&&c.es_principal)||state.contactos.find(c=>c.proveedor_id===p.id);
     return `<tr><td><strong>${escapeHtml(p.razon_social)}</strong><br><small>${escapeHtml(p.cuit||'')}</small></td>
       <td>${ct?escapeHtml(ct.nombre)+'<br><small>'+escapeHtml(ct.telefono||ct.email||'')+'</small>':'—'}</td>
-      <td>${money(s.comprado)}</td><td>${money(s.pagado)}</td>
-      <td><strong style="color:${s.saldo>0?'var(--red)':'inherit'}">${money(s.saldo)}</strong></td>
+      <td>${moneda(s.comprado)}</td><td>${moneda(s.pagado)}</td>
+      <td><strong style="color:${s.saldo>0?'var(--red)':'inherit'}">${moneda(s.saldo)}</strong></td>
       <td><button class="btn btn-sm" data-ficha="${p.id}">Ficha</button> <button class="btn btn-sm" data-pagar="${p.id}" ${s.saldo>0?'':'disabled'}>Pagar</button></td></tr>`;}).join('');
-  return `<div class="page-header"><div><h2>Proveedores</h2><p>Fichas, contactos y cuentas a pagar. Deuda total: <strong>${money(deuda)}</strong></p></div>
+  return `<div class="page-header"><div><h2>Proveedores</h2><p>Fichas, contactos y cuentas a pagar. Deuda total: <strong>${moneda(deuda)}</strong></p></div>
     <button class="btn btn-primary" id="btn-nuevo-prov">Nuevo proveedor</button></div>
     ${state.proveedores.length?`<div class="card"><table><thead><tr><th>Proveedor</th><th>Contacto</th><th>Comprado</th><th>Pagado</th><th>Saldo</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`
     :`<div class="empty-state"><h3>Todavía no cargaste proveedores</h3><p>Agregá el primero para registrar compras y cuentas a pagar.</p></div>`}`;
@@ -1280,10 +1281,10 @@ function openFicha(id){
   openModal(`<h3>${escapeHtml(p.razon_social)}</h3>
     <p style="font-size:13px;color:var(--ink-soft)">${[p.nombre_fantasia,p.cuit&&'CUIT '+p.cuit,p.condicion_iva,p.direccion,p.localidad,p.condicion_pago&&'Pago: '+p.condicion_pago+(p.dias_credito?' ('+p.dias_credito+' días)':'')].filter(Boolean).map(escapeHtml).join(' · ')||'Sin datos adicionales'}</p>
     ${p.notas?`<p style="font-size:13px">${escapeHtml(p.notas)}</p>`:''}
-    <p><strong>Saldo pendiente: ${money(s.saldo)}</strong> (comprado ${money(s.comprado)} · pagado ${money(s.pagado)})</p>
+    <p><strong>Saldo pendiente: ${moneda(s.saldo)}</strong> (comprado ${moneda(s.comprado)} · pagado ${moneda(s.pagado)})</p>
     <h4>Contactos</h4>${cts.length?cts.map(c=>`<div style="font-size:13px">${escapeHtml(c.nombre)}${c.puesto?' — '+escapeHtml(c.puesto):''} · ${escapeHtml(c.telefono||'')} · ${escapeHtml(c.email||'')}</div>`).join(''):'<p style="font-size:13px">Sin contactos.</p>'}
-    <h4>Compras / facturas</h4>${cs.length?`<table><tbody>${cs.map(c=>`<tr><td>${fecha(c.fecha)}</td><td>${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'')}</td><td>${c.estado==='borrador'?'Borrador':c.estado_pago}</td><td>${money(c.total)}</td><td>${c.estado==='confirmada'&&c.total>c.pagado?'debe '+money(c.total-c.pagado):''}</td></tr>`).join('')}</tbody></table>`:'<p style="font-size:13px">Sin compras.</p>'}
-    <h4>Pagos</h4>${ps.length?`<table><tbody>${ps.map(x=>`<tr><td>${fecha(x.fecha)}</td><td>${escapeHtml(x.medio_pago)}</td><td>${money(x.monto)}</td><td>${escapeHtml(x.usuario||'')}</td></tr>`).join('')}</tbody></table>`:'<p style="font-size:13px">Sin pagos.</p>'}
+    <h4>Compras / facturas</h4>${cs.length?`<table><tbody>${cs.map(c=>`<tr><td>${fecha(c.fecha)}</td><td>${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'')}</td><td>${c.estado==='borrador'?'Borrador':c.estado_pago}</td><td>${moneda(c.total)}</td><td>${c.estado==='confirmada'&&c.total>c.pagado?'debe '+moneda(c.total-c.pagado):''}</td></tr>`).join('')}</tbody></table>`:'<p style="font-size:13px">Sin compras.</p>'}
+    <h4>Pagos</h4>${ps.length?`<table><tbody>${ps.map(x=>`<tr><td>${fecha(x.fecha)}</td><td>${escapeHtml(x.medio_pago)}</td><td>${moneda(x.monto)}</td><td>${escapeHtml(x.usuario||'')}</td></tr>`).join('')}</tbody></table>`:'<p style="font-size:13px">Sin pagos.</p>'}
     <div class="modal-actions"><button class="btn" id="m-cancel">Cerrar</button><button class="btn btn-primary" id="m-edit">Editar</button></div>`,
   ()=>{document.getElementById('m-cancel').addEventListener('click',closeModal);document.getElementById('m-edit').addEventListener('click',()=>openModalProveedor(p));});
 }
@@ -1324,8 +1325,8 @@ function openModalProveedor(p){
 function openModalPago(provId,compraId){
   const pend=state.compras.filter(c=>c.proveedor_id===provId&&c.estado==='confirmada'&&c.total>c.pagado).sort((a,b)=>a.fecha<b.fecha?-1:1);
   const saldo=saldoProv(provId).saldo;
-  openModal(`<h3>Pago a ${escapeHtml(provNombre(provId))}</h3><p style="font-size:13px">Deuda pendiente: <strong>${money(saldo)}</strong></p>
-    <div class="field"><label for="pg-compra">Imputar a</label><select id="pg-compra"><option value="">Facturas más antiguas primero</option>${pend.map(c=>`<option value="${c.id}">${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'s/n')} — debe ${money(c.total-c.pagado)}</option>`).join('')}</select></div>
+  openModal(`<h3>Pago a ${escapeHtml(provNombre(provId))}</h3><p style="font-size:13px">Deuda pendiente: <strong>${moneda(saldo)}</strong></p>
+    <div class="field"><label for="pg-compra">Imputar a</label><select id="pg-compra"><option value="">Facturas más antiguas primero</option>${pend.map(c=>`<option value="${c.id}">${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'s/n')} — debe ${moneda(c.total-c.pagado)}</option>`).join('')}</select></div>
     ${fld('pg-monto','Monto','','number')}
     <div class="field"><label for="pg-medio">Medio de pago</label><select id="pg-medio"><option>efectivo</option><option>transferencia</option><option>tarjeta</option><option>cheque</option></select></div>
     ${fld('pg-notas','Notas','')}<div class="field-error" id="m-error"></div>
@@ -1349,7 +1350,7 @@ function renderCompras(){
     const est=c.estado==='borrador'?'Borrador':c.estado==='anulada'?'Anulada':(c.estado_pago==='pagada'?'Pagada':c.estado_pago==='parcial'?'Pago parcial':'A pagar');
     const acc=c.estado==='borrador'?`<button class="btn btn-sm" data-cedit="${c.id}">Editar</button> <button class="btn btn-sm btn-primary" data-cconf="${c.id}">Confirmar</button> <button class="btn btn-sm btn-danger" data-cdel="${c.id}">Eliminar</button>`
       :c.estado==='confirmada'?`<button class="btn btn-sm" data-cver="${c.id}">Ver</button> <button class="btn btn-sm btn-danger" data-canul="${c.id}">Anular</button>`:`<button class="btn btn-sm" data-cver="${c.id}">Ver</button>`;
-    return `<tr><td>${fecha(c.fecha)}</td><td>${escapeHtml(provNombre(c.proveedor_id))}</td><td>${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'')}</td><td>${est}</td><td>${money(c.total)}</td><td>${acc}</td></tr>`;}).join('');
+    return `<tr><td>${fecha(c.fecha)}</td><td>${escapeHtml(provNombre(c.proveedor_id))}</td><td>${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'')}</td><td>${est}</td><td>${moneda(c.total)}</td><td>${acc}</td></tr>`;}).join('');
   return `<div class="page-header"><div><h2>Compras</h2><p>Cargá facturas como borrador; al confirmar, el stock se actualiza automáticamente.</p></div>
     <button class="btn btn-primary" id="btn-nueva-compra">Nueva compra</button></div>
     ${state.compras.length?`<div class="card"><table><thead><tr><th>Fecha</th><th>Proveedor</th><th>Comprobante</th><th>Estado</th><th>Total</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`
@@ -1379,8 +1380,8 @@ function verCompra(c){
   const its=state.compraItems.filter(i=>i.compra_id===c.id);
   openModal(`<h3>${escapeHtml(provNombre(c.proveedor_id))} — ${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'')}</h3>
     <p style="font-size:13px">${fecha(c.fecha)} · ${c.estado}${c.usuario?' · '+escapeHtml(c.usuario):''}${c.notas?'<br>'+escapeHtml(c.notas):''}</p>
-    <table><thead><tr><th>Producto</th><th>Cant.</th><th>Costo</th><th>Subtotal</th></tr></thead><tbody>${its.map(i=>`<tr><td>${escapeHtml((state.productos.find(p=>p.id===i.producto_id)||{}).nombre||'—')}</td><td>${i.cantidad}</td><td>${money(i.costo_unitario)}</td><td>${money(i.cantidad*i.costo_unitario)}</td></tr>`).join('')}</tbody></table>
-    <p><strong>Total ${money(c.total)}</strong> · pagado ${money(c.pagado)}</p><div class="modal-actions"><button class="btn" id="m-cancel">Cerrar</button></div>`,
+    <table><thead><tr><th>Producto</th><th>Cant.</th><th>Costo</th><th>Subtotal</th></tr></thead><tbody>${its.map(i=>`<tr><td>${escapeHtml((state.productos.find(p=>p.id===i.producto_id)||{}).nombre||'—')}</td><td>${i.cantidad}</td><td>${moneda(i.costo_unitario)}</td><td>${moneda(i.cantidad*i.costo_unitario)}</td></tr>`).join('')}</tbody></table>
+    <p><strong>Total ${moneda(c.total)}</strong> · pagado ${moneda(c.pagado)}</p><div class="modal-actions"><button class="btn" id="m-cancel">Cerrar</button></div>`,
   ()=>document.getElementById('m-cancel').addEventListener('click',closeModal));
 }
 function openModalCompra(c,pre){
@@ -1403,7 +1404,7 @@ function openModalCompra(c,pre){
   ()=>{
     const list=document.getElementById('ci-list');
     const leer=()=>[...list.querySelectorAll('.ci-row')].map(r=>({producto_id:r.querySelector('.ci-prod').value,cantidad:parseInt(r.querySelector('.ci-cant').value,10),costo_unitario:parseFloat(r.querySelector('.ci-costo').value)}));
-    const recalc=()=>{document.getElementById('cp-total').textContent=money(leer().reduce((s,i)=>s+(i.cantidad>0&&i.costo_unitario>=0?i.cantidad*i.costo_unitario:0),0));};
+    const recalc=()=>{document.getElementById('cp-total').textContent=moneda(leer().reduce((s,i)=>s+(i.cantidad>0&&i.costo_unitario>=0?i.cantidad*i.costo_unitario:0),0));};
     recalc();
     document.getElementById('m-cancel').addEventListener('click',closeModal);
     document.getElementById('ci-add').addEventListener('click',()=>{list.insertAdjacentHTML('beforeend',row({}));recalc();});
@@ -1479,7 +1480,7 @@ function renderStockBajo(){
     const r=state.rubros.find(x=>x.id===p.rubroId), pv=ultimoProveedorDe(p.id), cu=state.costoUlt[p.id];
     return `<tr><td><strong>${escapeHtml(p.nombre)}</strong></td><td>${escapeHtml(r?r.nombre:'—')}</td>
       <td><strong style="color:${p.stock<=0?'var(--red)':'var(--amber)'}">${p.stock<=0?'Agotado':p.stock}</strong></td>
-      <td>${cu!=null?money(cu):'—'}</td><td>${pv?escapeHtml(provNombre(pv)):'—'}</td>
+      <td>${cu!=null?moneda(cu):'—'}</td><td>${pv?escapeHtml(provNombre(pv)):'—'}</td>
       <td><button class="btn btn-sm btn-primary" data-repo="${p.id}">Reponer</button></td></tr>`;}).join('');
   return `<div class="page-header"><div><h2>Stock bajo</h2><p>${lista.length} producto(s) con stock igual o menor a ${u}${ag?` — <strong style="color:var(--red)">${ag} agotado(s)</strong>`:''}.</p></div>
     <div class="field" style="margin:0;display:flex;align-items:center;gap:8px"><label for="umbral-stock" style="margin:0">Avisar cuando quede</label><input type="number" id="umbral-stock" min="0" step="1" value="${u}" style="width:70px"></div></div>
@@ -1501,16 +1502,16 @@ function renderCuentasPagar(){
   const lista=(f==='vencidas'?venc:f==='proximas'?prox:pend).slice().sort((a,b)=>(a.fecha_vencimiento||'9999')<(b.fecha_vencimiento||'9999')?-1:1);
   const estado=c=>c.dias===null?'Sin vencimiento':c.dias<0?`<span style="color:var(--red);font-weight:600">Vencida hace ${-c.dias} día(s)</span>`:c.dias===0?'<span style="color:var(--amber);font-weight:600">Vence hoy</span>':c.dias<=7?`<span style="color:var(--amber);font-weight:600">Vence en ${c.dias} día(s)</span>`:'Al día';
   const filas=lista.map(c=>`<tr><td>${c.fecha_vencimiento?new Date(c.fecha_vencimiento+'T00:00:00').toLocaleDateString('es-AR'):'—'}</td><td>${escapeHtml(provNombre(c.proveedor_id))}</td>
-    <td>${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'')}</td><td>${money(c.total)}</td><td>${money(c.pagado)}</td><td><strong>${money(c.saldo)}</strong></td><td>${estado(c)}</td>
+    <td>${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'')}</td><td>${moneda(c.total)}</td><td>${moneda(c.pagado)}</td><td><strong>${moneda(c.saldo)}</strong></td><td>${estado(c)}</td>
     <td><button class="btn btn-sm btn-primary" data-cp-pagar="${c.id}">Pagar</button> <button class="btn btn-sm" data-cp-ver="${c.id}">Ver</button></td></tr>`).join('');
-  const kpi=(t,v,col)=>`<div class="card" style="padding:14px 16px"><div style="font-size:12.5px;color:var(--ink-soft)">${t}</div><div style="font-size:22px;font-weight:700;${col?'color:'+col:''}">${money(v)}</div></div>`;
+  const kpi=(t,v,col)=>`<div class="card" style="padding:14px 16px"><div style="font-size:12.5px;color:var(--ink-soft)">${t}</div><div style="font-size:22px;font-weight:700;${col?'color:'+col:''}">${moneda(v)}</div></div>`;
   const pagos=state.pagos.slice(0,8);
   return `<div class="page-header"><div><h2>Cuentas a pagar</h2><p>Facturas confirmadas con saldo pendiente, ordenadas por vencimiento.</p></div>
     <select id="f-cp"><option value="todas" ${f==='todas'?'selected':''}>Todas (${pend.length})</option><option value="vencidas" ${f==='vencidas'?'selected':''}>Vencidas (${venc.length})</option><option value="proximas" ${f==='proximas'?'selected':''}>Vencen en 7 días (${prox.length})</option></select></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px">${kpi('Total adeudado',suma(pend))}${kpi('Vencido',suma(venc),venc.length?'var(--red)':'')}${kpi('Vence en 7 días',suma(prox),prox.length?'var(--amber)':'')}</div>
     ${lista.length?`<div class="card"><table><thead><tr><th>Vence</th><th>Proveedor</th><th>Comprobante</th><th>Total</th><th>Pagado</th><th>Saldo</th><th>Estado</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`
     :`<div class="empty-state"><h3>No hay facturas para mostrar</h3><p>No tenés deudas con este filtro.</p></div>`}
-    ${pagos.length?`<h4 style="margin:20px 0 8px">Últimos pagos</h4><div class="card"><table><tbody>${pagos.map(x=>`<tr><td>${fecha(x.fecha)}</td><td>${escapeHtml(provNombre(x.proveedor_id))}</td><td>${escapeHtml(x.medio_pago)}</td><td><strong>${money(x.monto)}</strong></td><td>${escapeHtml(x.usuario||'')}</td></tr>`).join('')}</tbody></table></div>`:''}`;
+    ${pagos.length?`<h4 style="margin:20px 0 8px">Últimos pagos</h4><div class="card"><table><tbody>${pagos.map(x=>`<tr><td>${fecha(x.fecha)}</td><td>${escapeHtml(provNombre(x.proveedor_id))}</td><td>${escapeHtml(x.medio_pago)}</td><td><strong>${moneda(x.monto)}</strong></td><td>${escapeHtml(x.usuario||'')}</td></tr>`).join('')}</tbody></table></div>`:''}`;
 }
 function bindCuentasPagar(){
   document.getElementById('f-cp').addEventListener('change',e=>{state.filtroCP=e.target.value;render();});
@@ -1621,78 +1622,57 @@ function bindView(){
 
 
 /* ============================= FRONTEND DASHBOARD ============================= */
+/* ============================= DASHBOARD: SOLO GRÁFICOS DE VENTAS ============================= */
+const corto=n=>n>=1e6?(n/1e6).toFixed(1).replace('.0','')+'M':n>=1e3?Math.round(n/1e3)+'k':String(Math.round(n));
+function chartBarras(datos){
+  const W=640,H=230,pl=44,pb=26,pt=10,pr=8,max=Math.max(1,...datos.map(d=>d.value)),bw=(W-pl-pr)/datos.length,step=Math.ceil(datos.length/8);
+  const grid=[0,.5,1].map(f=>{const y=pt+(H-pt-pb)*(1-f);return `<line x1="${pl}" x2="${W-pr}" y1="${y}" y2="${y}" stroke="#d9d4c7" stroke-dasharray="3 3"/><text x="${pl-6}" y="${y+4}" text-anchor="end" font-size="10" fill="#6b6b6b">${corto(max*f)}</text>`;}).join('');
+  const bars=datos.map((d,i)=>{const h=(H-pt-pb)*d.value/max;return `<rect x="${pl+i*bw+bw*.15}" y="${H-pb-h}" width="${bw*.7}" height="${d.value>0?Math.max(h,1):0}" rx="2" fill="var(--teal)"><title>${d.label}: ${moneda(d.value)}</title></rect>`+(i%step===0?`<text x="${pl+i*bw+bw/2}" y="${H-8}" text-anchor="middle" font-size="10" fill="#6b6b6b">${d.label}</text>`:'');}).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${grid}${bars}</svg>`;
+}
+function chartHBarras(datos,color){
+  const max=Math.max(1,...datos.map(d=>d.value));
+  return datos.length?datos.map(d=>`<div style="display:grid;grid-template-columns:minmax(80px,32%) 1fr auto;gap:10px;align-items:center;margin:7px 0;font-size:13px"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(d.label)}">${escapeHtml(d.label)}</span><div style="background:#ece8dc;border-radius:4px;height:14px"><div style="width:${d.value/max*100}%;height:100%;border-radius:4px;background:${color}"></div></div><strong>${moneda(d.value)}</strong></div>`).join(''):'<p style="font-size:13px;color:var(--ink-soft)">Sin datos en este período.</p>';
+}
+function chartDonut(datos){
+  const tot=datos.reduce((s,d)=>s+d.value,0),cols=['#1f7a6d','#d99a2b','#4a6fa5','#b5483a','#7a6aa8'],R=70,C=2*Math.PI*R;
+  if(!tot) return '<p style="font-size:13px;color:var(--ink-soft)">Sin datos en este período.</p>';
+  let off=0;
+  const arcs=datos.map((d,i)=>{const len=C*d.value/tot,s=`<circle cx="100" cy="100" r="${R}" fill="none" stroke="${cols[i%5]}" stroke-width="30" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" transform="rotate(-90 100 100)"><title>${escapeHtml(d.label)}: ${moneda(d.value)}</title></circle>`;off+=len;return s;}).join('');
+  const leg=datos.map((d,i)=>`<div style="font-size:13px;margin:5px 0"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${cols[i%5]};margin-right:7px"></span>${escapeHtml(d.label)} <strong>${Math.round(d.value/tot*100)}%</strong> · ${moneda(d.value)}</div>`).join('');
+  return `<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap"><svg viewBox="0 0 200 200" style="width:170px;height:170px">${arcs}</svg><div>${leg}</div></div>`;
+}
 function renderDashboard(){
-  const total = (state.ventas||[]).reduce((s,v)=>s + Number(v.total||v.monto||0),0);
-  const ventas = state.ventas||[];
-  const hoy = new Date().toLocaleDateString('es-AR');
-  return `
-    <div class="page-header modern-header">
-      <div>
-        <div class="eyebrow">RESUMEN GENERAL</div>
-        <h2>Dashboard</h2>
-        <p>Una vista rápida de ventas, caja y cobranzas.</p>
-      </div>
-      <div class="header-actions">
-        <button class="btn btn-primary" data-nav="cobranzas">+ Registrar cobro</button>
-      </div>
-    </div>
-
-    <section class="modern-kpis">
-      <article class="modern-kpi">
-        <div class="kpi-icon">↗</div>
-        <div><span>Ventas acumuladas</span><strong>$ ${money(total)}</strong><small>Según ventas cargadas</small></div>
-      </article>
-      <article class="modern-kpi">
-        <div class="kpi-icon blue">●</div>
-        <div><span>Cobrado hoy</span><strong>$ 95.000</strong><small class="positive">+12,4% vs. período anterior</small></div>
-      </article>
-      <article class="modern-kpi">
-        <div class="kpi-icon amber">!</div>
-        <div><span>Por cobrar</span><strong>$ 430.000</strong><small>12 cuentas pendientes</small></div>
-      </article>
-      <article class="modern-kpi danger">
-        <div class="kpi-icon red">!</div>
-        <div><span>Vencido</span><strong>$ 185.000</strong><small>5 cuentas requieren atención</small></div>
-      </article>
-    </section>
-
-    <section class="dashboard-grid">
-      <article class="dashboard-panel chart-panel">
-        <div class="panel-head"><div><h3>Evolución de cobros</h3><p>Últimos 7 días</p></div><span class="mini-filter">Esta semana ▾</span></div>
-        <div class="fake-chart">
-          <div class="chart-y"><span>$120k</span><span>$90k</span><span>$60k</span><span>$30k</span><span>$0</span></div>
-          <div class="chart-area">
-            <div class="chart-line"></div>
-            <div class="chart-points"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-            <div class="chart-x"><span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span></div>
-          </div>
-        </div>
-      </article>
-
-      <article class="dashboard-panel">
-        <div class="panel-head"><div><h3>Estado de cuentas</h3><p>Resumen de cobranzas</p></div></div>
-        <div class="status-summary">
-          <div class="donut"><div><strong>62%</strong><span>al día</span></div></div>
-          <div class="status-legend">
-            <div><b><i class="dot green"></i>Pagadas</b><strong>62%</strong></div>
-            <div><b><i class="dot yellow"></i>Pendientes</b><strong>25%</strong></div>
-            <div><b><i class="dot red"></i>Vencidas</b><strong>13%</strong></div>
-          </div>
-        </div>
-      </article>
-    </section>
-
-    <section class="dashboard-panel">
-      <div class="panel-head">
-        <div><h3>Atención prioritaria</h3><p>Cuentas que requieren seguimiento</p></div>
-        <button class="link-btn" data-nav="cobranzas">Ver todas →</button>
-      </div>
-      ${renderDebtRows()}
-    </section>
-  `;
+  const dias=state.dashDias||30, ini=new Date();ini.setHours(0,0,0,0);ini.setDate(ini.getDate()-(dias-1));
+  const ventas=(state.ventas||[]).filter(v=>new Date(v.fecha)>=ini);
+  const totalP=ventas.reduce((s,v)=>s+Number(v.total||0),0);
+  const porDia={},medios={},rub={},prod={};
+  ventas.forEach(v=>{
+    const k=new Date(v.fecha).toLocaleDateString('en-CA');porDia[k]=(porDia[k]||0)+Number(v.total||0);
+    const m=v.medioPago||'otro';medios[m]=(medios[m]||0)+Number(v.total||0);
+    (v.items||[]).forEach(i=>{
+      const p=state.productos.find(x=>x.id===i.productoId),monto=(i.precio||0)*(i.cantidad||0);
+      const rn=p&&p.esCombo?'Combos / promos':((state.rubros.find(r=>p&&r.id===p.rubroId)||{}).nombre||'Sin rubro');
+      rub[rn]=(rub[rn]||0)+monto;prod[i.nombre||'—']=(prod[i.nombre||'—']||0)+monto;
+    });
+  });
+  const serie=[];for(let i=0;i<dias;i++){const d=new Date(ini);d.setDate(ini.getDate()+i);serie.push({label:d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}),value:porDia[d.toLocaleDateString('en-CA')]||0});}
+  const top=(o,n)=>Object.entries(o).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value).slice(0,n);
+  const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+  const card=(t,body)=>`<div class="card" style="padding:16px 18px"><h4 style="margin:0 0 10px">${t}</h4>${body}</div>`;
+  return `<div class="page-header"><div><h2>Dashboard</h2><p>${ventas.length} venta(s) · ${moneda(totalP)} en los últimos ${dias} días.</p></div>
+    <div style="display:flex;gap:6px">${[7,30,90].map(d=>`<button class="rubro-tab ${d===dias?'active':''}" data-dias="${d}">${d} días</button>`).join('')}</div></div>
+    ${ventas.length?`<div style="display:grid;gap:16px">
+      ${card('Ventas por día',chartBarras(serie))}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
+        ${card('Ventas por medio de pago',chartDonut(top(medios,5).map(d=>({...d,label:cap(d.label)}))))}
+        ${card('Ventas por rubro',chartHBarras(top(rub,6),'var(--teal)'))}
+        ${card('Productos más vendidos',chartHBarras(top(prod,7),'#d99a2b'))}
+      </div></div>`
+    :`<div class="empty-state"><h3>Sin ventas en los últimos ${dias} días</h3><p>Cuando registres ventas, los gráficos aparecen acá.</p></div>`}`;
 }
 function bindDashboard(){
-  document.querySelectorAll('[data-nav="cobranzas"]').forEach(b=>b.addEventListener('click',()=>setView('cobranzas')));
+  document.querySelectorAll('[data-dias]').forEach(b=>b.addEventListener('click',()=>{state.dashDias=parseInt(b.dataset.dias,10);render();}));
 }
 function money(n){ return Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0}); }
 function renderDebtRows(){

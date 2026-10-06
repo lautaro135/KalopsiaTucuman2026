@@ -1170,6 +1170,7 @@ async function loadAll(){
     state.historial=(hi.data||[]).map(h=>({id:h.id,fechaApertura:h.fecha_apertura,fechaCierre:h.fecha_cierre,montoInicial:Number(h.monto_inicial),porMedio:h.por_medio||{},totalVentas:Number(h.total_ventas),ingresosManuales:Number(h.ingresos_manuales),egresosManuales:Number(h.egresos_manuales),efectivoEsperado:Number(h.efectivo_esperado),montoContado:Number(h.monto_contado),diferencia:Number(h.diferencia),cajaId:h.caja_id}));
     await loadCompras();
     await loadCobranzas();
+    await loadActividad();
   }catch(e){ console.error(e); showToast('No se pudieron cargar los datos de Supabase.'); }
 }
 async function saveProductos(){
@@ -1185,7 +1186,7 @@ async function saveProductos(){
         if(!r.ok) break;
       }
     }
-    await refrescarStock(); await recargarMovs();
+    await refrescarStock(); await recargarMovs(); await loadActividad();
   }
   return true;
 }
@@ -1521,6 +1522,53 @@ function bindCuentasPagar(){
   $$('[data-cp-ver]',x=>x.addEventListener('click',()=>verCompra(get(x.dataset.cpVer))));
 }
 
+/* ============================= ACTIVIDAD RECIENTE (historial / auditoría) ============================= */
+state.actividad=[];state.actividadListo=false;state.filtroAct='todo';
+async function loadActividad(){
+  const {data,error}=await supabaseClient.from('actividad').select('*').order('fecha',{ascending:false}).limit(150);
+  if(error){state.actividad=[];state.actividadListo=false;return;}
+  state.actividad=data||[];state.actividadListo=true;
+}
+function eventosActividad(){
+  const ev=[],prod=id=>(state.productos.find(p=>p.id===id)||{}).nombre||'producto eliminado';
+  (state.ventas||[]).forEach(v=>ev.push({f:v.fecha,t:'venta',i:'🧾',x:`Se registró venta #${v.numero} — ${moneda(v.total)}${v.medioPago?' ('+v.medioPago+')':''}`}));
+  if(state.caja){
+    ev.push({f:state.caja.fechaApertura,t:'caja',i:'🔓',x:`Se abrió caja (inicial ${moneda(state.caja.montoInicial)})`});
+    (state.caja.movimientos||[]).forEach(m=>ev.push({f:m.fecha,t:'caja',i:'💵',x:`${m.tipo==='ingreso'?'Ingreso':'Retiro'} de efectivo ${moneda(m.monto)}${m.motivo?' — '+m.motivo:''}`}));
+  }
+  (state.historial||[]).forEach(h=>{
+    ev.push({f:h.fechaApertura,t:'caja',i:'🔓',x:`Se abrió caja (inicial ${moneda(h.montoInicial)})`});
+    ev.push({f:h.fechaCierre,t:'caja',i:'🔒',x:`Se cerró caja — ventas ${moneda(h.totalVentas)}${isFinite(h.diferencia)&&h.diferencia!==0?' · diferencia '+moneda(h.diferencia):' · sin diferencia'}`});
+  });
+  (state.movs||[]).filter(m=>m.tipo!=='salida_venta').forEach(m=>{
+    const n=Math.abs(m.cantidad),e=m.cantidad>0;
+    ev.push({f:m.fecha,t:'stock',i:e?'📦':'📉',x:`${e?'Ingreso':'Salida'} de ${n} unidad${n===1?'':'es'} de ${prod(m.producto_id)} — ${TIPO_MOV[m.tipo]||m.tipo}${m.motivo&&m.tipo==='ajuste'?' ('+m.motivo+')':''}`,u:m.usuario});
+  });
+  (state.pagos||[]).forEach(p=>ev.push({f:p.fecha,t:'pago',i:'💸',x:`Se registró pago a ${provNombre(p.proveedor_id)} — ${moneda(p.monto)} (${p.medio_pago})`,u:p.usuario}));
+  (state.actividad||[]).forEach(a=>ev.push({f:a.fecha,t:a.tipo==='precio'?'precio':'producto',i:a.tipo==='precio'?'🏷️':'🆕',x:a.detalle,u:a.usuario}));
+  return ev.filter(e=>e.f).sort((a,b)=>new Date(b.f)-new Date(a.f));
+}
+function renderActividad(){
+  const f=state.filtroAct,ev=eventosActividad().filter(e=>f==='todo'||e.t===f||(f==='precio'&&e.t==='producto')).slice(0,80);
+  const hoy=new Date().toDateString(),ayer=new Date(Date.now()-864e5).toDateString();
+  const dia=iso=>{const d=new Date(iso),s=d.toDateString();return s===hoy?'Hoy':s===ayer?'Ayer':d.toLocaleDateString('es-AR',{weekday:'long',day:'2-digit',month:'2-digit'});};
+  let ult='',html='';
+  ev.forEach(e=>{
+    const d=dia(e.f);
+    if(d!==ult){html+=`<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);margin:16px 0 6px">${d}</div>`;ult=d;}
+    html+=`<div style="display:flex;gap:12px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line)"><strong style="min-width:44px;font-variant-numeric:tabular-nums">${new Date(e.f).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}</strong><span>${e.i}</span><span style="flex:1">${escapeHtml(e.x)}${e.u?` <small style="color:var(--ink-soft)">· ${escapeHtml(e.u)}</small>`:''}</span></div>`;
+  });
+  const filtros=[['todo','Todo'],['venta','Ventas'],['stock','Stock'],['caja','Caja'],['pago','Pagos'],['precio','Productos y precios']];
+  return `<div class="page-header"><div><h2>Actividad reciente</h2><p>Todo lo que pasó en el sistema, de lo más nuevo a lo más viejo.</p></div>
+    <div style="display:flex;gap:8px"><select id="f-act">${filtros.map(([v,l])=>`<option value="${v}" ${v===f?'selected':''}>${l}</option>`).join('')}</select><button class="btn" id="btn-act-refresh">Actualizar</button></div></div>
+    ${!state.actividadListo?`<div class="modal-note" style="margin-bottom:12px;font-size:13px;color:var(--ink-soft)">Para registrar cambios de precio y altas o bajas de productos, ejecutá supabase_actividad.sql en Supabase.</div>`:''}
+    ${ev.length?`<div class="card" style="padding:4px 18px 12px">${html}</div>`:`<div class="empty-state"><h3>Todavía no hay actividad</h3><p>Cuando hagas ventas, movimientos de stock o pagos, van a aparecer acá.</p></div>`}`;
+}
+function bindActividad(){
+  document.getElementById('f-act').addEventListener('change',e=>{state.filtroAct=e.target.value;render();});
+  document.getElementById('btn-act-refresh').addEventListener('click',async()=>{await loadCompras();await loadActividad();render();showToast('Actividad actualizada.');});
+}
+
 /* ============================= NAV ============================= */
 const NAV = [
   {id:'dashboard', label:'Dashboard', icon:'&#9632;'},
@@ -1535,6 +1583,7 @@ const NAV = [
   {id:'movstock', label:'Mov. de stock', icon:'&#128260;'},
   {id:'stockbajo', label:'Stock bajo', icon:'&#9888;'},
   {id:'cuentaspagar', label:'Cuentas a pagar', icon:'&#129534;'},
+  {id:'actividad', label:'Actividad', icon:'&#128338;'},
   {id:'rubros', label:'Rubros', icon:'&#127991;'},
   {id:'historial', label:'Historial', icon:'&#128203;'},
 ];
@@ -1596,6 +1645,7 @@ function renderView(){
     case 'movstock': return renderMovStock();
     case 'stockbajo': return renderStockBajo();
     case 'cuentaspagar': return renderCuentasPagar();
+    case 'actividad': return renderActividad();
     case 'rubros': return renderRubros();
     case 'historial': return renderHistorial();
     default: return '';
@@ -1616,6 +1666,7 @@ function bindView(){
     case 'movstock': return bindMovStock();
     case 'stockbajo': return bindStockBajo();
     case 'cuentaspagar': return bindCuentasPagar();
+    case 'actividad': return bindActividad();
     case 'rubros': return bindRubros();
     case 'historial': return bindHistorial();
   }

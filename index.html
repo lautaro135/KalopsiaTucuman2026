@@ -1168,11 +1168,25 @@ async function loadAll(){
       movimientos:(mv.data||[]).filter(m=>m.caja_id===c.id).map(m=>({id:m.id,tipo:m.tipo,monto:Number(m.monto),motivo:m.motivo,fecha:m.fecha}))}:null;
     state.ventas=(ve.data||[]).map(v=>({id:v.id,numero:v.numero,fecha:v.fecha,cajaId:v.caja_id,items:v.items||[],subtotal:v.subtotal!=null?Number(v.subtotal):Number(v.total),ajusteTipo:v.ajuste_tipo||'ninguno',ajustePorcentaje:v.ajuste_porcentaje!=null?Number(v.ajuste_porcentaje):0,ajusteMonto:v.ajuste_monto!=null?Number(v.ajuste_monto):0,total:Number(v.total),medioPago:v.medio_pago,clienteNombre:v.cliente_nombre||'Consumidor final'}));
     state.historial=(hi.data||[]).map(h=>({id:h.id,fechaApertura:h.fecha_apertura,fechaCierre:h.fecha_cierre,montoInicial:Number(h.monto_inicial),porMedio:h.por_medio||{},totalVentas:Number(h.total_ventas),ingresosManuales:Number(h.ingresos_manuales),egresosManuales:Number(h.egresos_manuales),efectivoEsperado:Number(h.efectivo_esperado),montoContado:Number(h.monto_contado),diferencia:Number(h.diferencia),cajaId:h.caja_id}));
+    await loadCompras();
   }catch(e){ console.error(e); showToast('No se pudieron cargar los datos de Supabase.'); }
 }
 async function saveProductos(){
-  const {error}=await supabaseClient.from('productos').upsert(state.productos.map(p=>({id:p.id,nombre:p.nombre,precio:p.precio,stock:p.stock,rubro_id:p.rubroId,codigo_barras:p.codigoBarras||null,es_combo:!!p.esCombo,combo_items:p.comboItems||[]})));
-  if(error){console.error(error);showToast('Error guardando productos.');return false} return true;
+  const {error}=await supabaseClient.from('productos').upsert(state.productos.map(p=>({id:p.id,nombre:p.nombre,precio:p.precio,...(state.moduloListo?{}:{stock:p.stock}),rubro_id:p.rubroId,codigo_barras:p.codigoBarras||null,es_combo:!!p.esCombo,combo_items:p.comboItems||[]})));
+  if(error){console.error(error);showToast('Error guardando productos.');return false}
+  if(state.moduloListo){
+    // Cambios manuales de stock (+/-, edición, importación, stock inicial) => movimiento 'ajuste' relativo en el ledger
+    for(const p of state.productos){
+      if(p.esCombo) continue;
+      const base=state.stockBase[p.id], diff=p.stock-(base===undefined?0:base);
+      if(diff!==0){
+        const r=await rpcOk('registrar_movimiento_manual',{p_producto:p.id,p_tipo:'ajuste',p_cantidad:diff,p_usuario:getUsuario(),p_motivo:base===undefined?'Stock inicial':'Edición manual en Productos'});
+        if(!r.ok) break;
+      }
+    }
+    await refrescarStock(); await recargarMovs();
+  }
+  return true;
 }
 async function saveRubros(){
   const {error}=await supabaseClient.from('rubros').upsert(state.rubros.map(r=>({id:r.id,nombre:r.nombre})));
@@ -1187,6 +1201,324 @@ async function deleteRow(table,id){
   if(error){console.error(error);showToast('No se pudo eliminar.');return false} return true;
 }
 
+/* ============================= PROVEEDORES / COMPRAS / MOVIMIENTOS DE STOCK ============================= */
+Object.assign(state,{proveedores:[],contactos:[],compras:[],compraItems:[],pagos:[],movs:[],costoUlt:{},stockBase:{},filtroMov:'todos',moduloListo:false});
+const TIPO_MOV={entrada_compra:'Compra',entrada_devolucion:'Devolución de cliente',salida_venta:'Venta',salida_merma:'Merma',ajuste:'Ajuste',perdida_rotura:'Pérdida: rotura',perdida_vencimiento:'Pérdida: vencimiento',perdida_robo:'Pérdida: robo',transferencia_salida:'Transferencia (sale)',transferencia_entrada:'Transferencia (entra)'};
+const $$=(s,f)=>document.querySelectorAll(s).forEach(f);
+const V=id=>document.getElementById(id).value.trim();
+const N=x=>Number(x)||0;
+const hoyISO=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+function getUsuario(){
+  let u=localStorage.getItem('pos_usuario');
+  if(!u){ u=(prompt('¿Con qué nombre registramos tus movimientos de stock y pagos?')||'').trim()||'Sin nombre'; localStorage.setItem('pos_usuario',u); }
+  return u;
+}
+function fld(id,label,val,type){return `<div class="field"><label for="${id}">${label}</label><input type="${type||'text'}" id="${id}" value="${escapeHtml(val==null?'':val)}"></div>`;}
+function optsHtml(list,sel,vf,lf){return list.map(x=>`<option value="${escapeHtml(vf(x))}" ${vf(x)===sel?'selected':''}>${escapeHtml(lf(x))}</option>`).join('');}
+const provNombre=id=>(state.proveedores.find(p=>p.id===id)||{}).razon_social||'—';
+function saldoProv(id){
+  const cs=state.compras.filter(c=>c.proveedor_id===id&&c.estado==='confirmada');
+  const comprado=cs.reduce((s,c)=>s+c.total,0), pagado=cs.reduce((s,c)=>s+c.pagado,0);
+  return {comprado,pagado,saldo:comprado-pagado};
+}
+async function rpcOk(nombre,args,okMsg){
+  const {data,error}=await supabaseClient.rpc(nombre,args);
+  if(error){console.error(error);showToast(error.message||'Operación rechazada.');return {ok:false};}
+  if(okMsg) showToast(okMsg);
+  return {ok:true,data};
+}
+
+/* ---------- carga / sincronización ---------- */
+async function recargarMovs(){const {data}=await supabaseClient.from('movimientos_stock').select('*').order('fecha',{ascending:false}).limit(300);state.movs=data||[];}
+async function refrescarStock(){
+  const {data,error}=await supabaseClient.from('productos').select('id,stock');
+  if(error) return;
+  (data||[]).forEach(r=>{const p=state.productos.find(x=>x.id===r.id);if(p){p.stock=N(r.stock);state.stockBase[p.id]=p.stock;}});
+}
+async function loadCompras(){
+  const s=t=>supabaseClient.from(t);
+  const r=await Promise.all([s('proveedores').select('*').order('razon_social'),s('proveedor_contactos').select('*'),s('compras').select('*').order('fecha',{ascending:false}),s('compra_items').select('*'),s('pagos_proveedor').select('*').order('fecha',{ascending:false}),s('productos').select('id,costo_ultimo')]);
+  if(r.some(x=>x.error)){console.error(r.map(x=>x.error));showToast('Ejecutá supabase_compras_stock.sql en Supabase para activar Compras y Proveedores.');return;}
+  const [a,b,c,d,e,f]=r.map(x=>x.data||[]);
+  state.proveedores=a;state.contactos=b;
+  state.compras=c.map(x=>({...x,total:N(x.total),pagado:N(x.pagado)}));
+  state.compraItems=d.map(x=>({...x,cantidad:N(x.cantidad),costo_unitario:N(x.costo_unitario)}));
+  state.pagos=e.map(x=>({...x,monto:N(x.monto)}));
+  state.costoUlt={};f.forEach(x=>{if(x.costo_ultimo!=null)state.costoUlt[x.id]=N(x.costo_ultimo);});
+  state.moduloListo=true;
+  await recargarMovs();await refrescarStock();
+}
+async function recargarTodoCompras(){await loadCompras();render();}
+
+/* ============================= PROVEEDORES ============================= */
+function renderProveedores(){
+  const deuda=state.proveedores.reduce((s,p)=>s+saldoProv(p.id).saldo,0);
+  const filas=state.proveedores.map(p=>{
+    const s=saldoProv(p.id);
+    const ct=state.contactos.find(c=>c.proveedor_id===p.id&&c.es_principal)||state.contactos.find(c=>c.proveedor_id===p.id);
+    return `<tr><td><strong>${escapeHtml(p.razon_social)}</strong><br><small>${escapeHtml(p.cuit||'')}</small></td>
+      <td>${ct?escapeHtml(ct.nombre)+'<br><small>'+escapeHtml(ct.telefono||ct.email||'')+'</small>':'—'}</td>
+      <td>${money(s.comprado)}</td><td>${money(s.pagado)}</td>
+      <td><strong style="color:${s.saldo>0?'var(--red)':'inherit'}">${money(s.saldo)}</strong></td>
+      <td><button class="btn btn-sm" data-ficha="${p.id}">Ficha</button> <button class="btn btn-sm" data-pagar="${p.id}" ${s.saldo>0?'':'disabled'}>Pagar</button></td></tr>`;}).join('');
+  return `<div class="page-header"><div><h2>Proveedores</h2><p>Fichas, contactos y cuentas a pagar. Deuda total: <strong>${money(deuda)}</strong></p></div>
+    <button class="btn btn-primary" id="btn-nuevo-prov">Nuevo proveedor</button></div>
+    ${state.proveedores.length?`<div class="card"><table><thead><tr><th>Proveedor</th><th>Contacto</th><th>Comprado</th><th>Pagado</th><th>Saldo</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`
+    :`<div class="empty-state"><h3>Todavía no cargaste proveedores</h3><p>Agregá el primero para registrar compras y cuentas a pagar.</p></div>`}`;
+}
+function bindProveedores(){
+  const b=document.getElementById('btn-nuevo-prov');if(b)b.addEventListener('click',()=>openModalProveedor());
+  $$('[data-ficha]',x=>x.addEventListener('click',()=>openFicha(x.dataset.ficha)));
+  $$('[data-pagar]',x=>x.addEventListener('click',()=>openModalPago(x.dataset.pagar)));
+}
+function openFicha(id){
+  const p=state.proveedores.find(x=>x.id===id);if(!p)return;
+  const s=saldoProv(id);
+  const cts=state.contactos.filter(c=>c.proveedor_id===id);
+  const cs=state.compras.filter(c=>c.proveedor_id===id&&c.estado!=='anulada');
+  const ps=state.pagos.filter(x=>x.proveedor_id===id);
+  openModal(`<h3>${escapeHtml(p.razon_social)}</h3>
+    <p style="font-size:13px;color:var(--ink-soft)">${[p.nombre_fantasia,p.cuit&&'CUIT '+p.cuit,p.condicion_iva,p.direccion,p.localidad,p.condicion_pago&&'Pago: '+p.condicion_pago+(p.dias_credito?' ('+p.dias_credito+' días)':'')].filter(Boolean).map(escapeHtml).join(' · ')||'Sin datos adicionales'}</p>
+    ${p.notas?`<p style="font-size:13px">${escapeHtml(p.notas)}</p>`:''}
+    <p><strong>Saldo pendiente: ${money(s.saldo)}</strong> (comprado ${money(s.comprado)} · pagado ${money(s.pagado)})</p>
+    <h4>Contactos</h4>${cts.length?cts.map(c=>`<div style="font-size:13px">${escapeHtml(c.nombre)}${c.puesto?' — '+escapeHtml(c.puesto):''} · ${escapeHtml(c.telefono||'')} · ${escapeHtml(c.email||'')}</div>`).join(''):'<p style="font-size:13px">Sin contactos.</p>'}
+    <h4>Compras / facturas</h4>${cs.length?`<table><tbody>${cs.map(c=>`<tr><td>${fecha(c.fecha)}</td><td>${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'')}</td><td>${c.estado==='borrador'?'Borrador':c.estado_pago}</td><td>${money(c.total)}</td><td>${c.estado==='confirmada'&&c.total>c.pagado?'debe '+money(c.total-c.pagado):''}</td></tr>`).join('')}</tbody></table>`:'<p style="font-size:13px">Sin compras.</p>'}
+    <h4>Pagos</h4>${ps.length?`<table><tbody>${ps.map(x=>`<tr><td>${fecha(x.fecha)}</td><td>${escapeHtml(x.medio_pago)}</td><td>${money(x.monto)}</td><td>${escapeHtml(x.usuario||'')}</td></tr>`).join('')}</tbody></table>`:'<p style="font-size:13px">Sin pagos.</p>'}
+    <div class="modal-actions"><button class="btn" id="m-cancel">Cerrar</button><button class="btn btn-primary" id="m-edit">Editar</button></div>`,
+  ()=>{document.getElementById('m-cancel').addEventListener('click',closeModal);document.getElementById('m-edit').addEventListener('click',()=>openModalProveedor(p));});
+}
+function openModalProveedor(p){
+  const cts=p?state.contactos.filter(c=>c.proveedor_id===p.id):[{}];
+  const crow=c=>`<div class="ct-row" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 28px;gap:6px;margin-bottom:6px">
+    <input class="ct-n" placeholder="Nombre" value="${escapeHtml(c.nombre||'')}"><input class="ct-p" placeholder="Puesto" value="${escapeHtml(c.puesto||'')}">
+    <input class="ct-t" placeholder="Teléfono" value="${escapeHtml(c.telefono||'')}"><input class="ct-e" placeholder="Email" value="${escapeHtml(c.email||'')}">
+    <button type="button" class="btn btn-sm ct-del">&times;</button></div>`;
+  p=p||{};
+  openModal(`<h3>${p.id?'Editar proveedor':'Nuevo proveedor'}</h3>
+    ${fld('pv-rs','Razón social',p.razon_social)}${fld('pv-nf','Nombre de fantasía',p.nombre_fantasia)}${fld('pv-cuit','CUIT',p.cuit)}
+    <div class="field"><label for="pv-iva">Condición IVA</label><select id="pv-iva">${['','Responsable Inscripto','Monotributista','Exento','Consumidor Final'].map(o=>`<option ${o===(p.condicion_iva||'')?'selected':''}>${o}</option>`).join('')}</select></div>
+    ${fld('pv-dir','Dirección',p.direccion)}${fld('pv-loc','Localidad',p.localidad)}${fld('pv-cp','Condición de pago (ej: Contado, 30 días)',p.condicion_pago)}${fld('pv-dias','Días de crédito',p.dias_credito||0,'number')}${fld('pv-notas','Notas',p.notas)}
+    <label style="font-size:12.5px;color:var(--ink-soft)">Contactos (el primero es el principal)</label><div id="ct-list">${cts.map(crow).join('')}</div>
+    <button class="btn btn-sm" id="ct-add" type="button">+ Contacto</button>
+    <div class="field-error" id="m-error"></div>
+    <div class="modal-actions"><button class="btn" id="m-cancel">Cancelar</button><button class="btn btn-primary" id="m-ok">Guardar</button></div>`,
+  ()=>{
+    const list=document.getElementById('ct-list');
+    document.getElementById('m-cancel').addEventListener('click',closeModal);
+    document.getElementById('ct-add').addEventListener('click',()=>list.insertAdjacentHTML('beforeend',crow({})));
+    list.addEventListener('click',e=>{if(e.target.classList.contains('ct-del'))e.target.closest('.ct-row').remove();});
+    document.getElementById('m-ok').addEventListener('click',async()=>{
+      if(!V('pv-rs')){document.getElementById('m-error').textContent='Ingresá la razón social.';return;}
+      const reg={id:p.id||uid(),razon_social:V('pv-rs'),nombre_fantasia:V('pv-nf')||null,cuit:V('pv-cuit')||null,condicion_iva:V('pv-iva')||null,direccion:V('pv-dir')||null,localidad:V('pv-loc')||null,condicion_pago:V('pv-cp')||null,dias_credito:parseInt(V('pv-dias'),10)||0,notas:V('pv-notas')||null};
+      let {error}=await supabaseClient.from('proveedores').upsert(reg);
+      if(!error){
+        await supabaseClient.from('proveedor_contactos').delete().eq('proveedor_id',reg.id);
+        const filas=[...document.querySelectorAll('.ct-row')].map(r=>({nombre:r.querySelector('.ct-n').value.trim(),puesto:r.querySelector('.ct-p').value.trim()||null,telefono:r.querySelector('.ct-t').value.trim()||null,email:r.querySelector('.ct-e').value.trim()||null})).filter(c=>c.nombre).map((c,i)=>({...c,id:uid(),proveedor_id:reg.id,es_principal:i===0}));
+        if(filas.length) ({error}=await supabaseClient.from('proveedor_contactos').insert(filas));
+      }
+      if(error){console.error(error);document.getElementById('m-error').textContent=error.message;return;}
+      closeModal();await recargarTodoCompras();showToast('Proveedor guardado.');
+    });
+  });
+}
+function openModalPago(provId,compraId){
+  const pend=state.compras.filter(c=>c.proveedor_id===provId&&c.estado==='confirmada'&&c.total>c.pagado).sort((a,b)=>a.fecha<b.fecha?-1:1);
+  const saldo=saldoProv(provId).saldo;
+  openModal(`<h3>Pago a ${escapeHtml(provNombre(provId))}</h3><p style="font-size:13px">Deuda pendiente: <strong>${money(saldo)}</strong></p>
+    <div class="field"><label for="pg-compra">Imputar a</label><select id="pg-compra"><option value="">Facturas más antiguas primero</option>${pend.map(c=>`<option value="${c.id}">${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'s/n')} — debe ${money(c.total-c.pagado)}</option>`).join('')}</select></div>
+    ${fld('pg-monto','Monto','','number')}
+    <div class="field"><label for="pg-medio">Medio de pago</label><select id="pg-medio"><option>efectivo</option><option>transferencia</option><option>tarjeta</option><option>cheque</option></select></div>
+    ${fld('pg-notas','Notas','')}<div class="field-error" id="m-error"></div>
+    <div class="modal-actions"><button class="btn" id="m-cancel">Cancelar</button><button class="btn btn-primary" id="m-ok">Registrar pago</button></div>`,
+  ()=>{
+    document.getElementById('m-cancel').addEventListener('click',closeModal);
+    document.getElementById('pg-compra').addEventListener('change',e=>{const c=pend.find(x=>x.id===e.target.value);document.getElementById('pg-monto').value=c?(c.total-c.pagado).toFixed(2):'';});
+    if(compraId){const s=document.getElementById('pg-compra');s.value=compraId;s.dispatchEvent(new Event('change'));}
+    document.getElementById('m-ok').addEventListener('click',async()=>{
+      const monto=parseFloat(V('pg-monto'));
+      if(isNaN(monto)||monto<=0){document.getElementById('m-error').textContent='Ingresá un monto mayor a cero.';return;}
+      const r=await rpcOk('registrar_pago_proveedor',{p_proveedor:provId,p_compra_id:V('pg-compra')||null,p_monto:monto,p_medio:V('pg-medio'),p_usuario:getUsuario(),p_notas:V('pg-notas')||null},'Pago registrado.');
+      if(r.ok){closeModal();await recargarTodoCompras();}
+    });
+  });
+}
+
+/* ============================= COMPRAS ============================= */
+function renderCompras(){
+  const filas=state.compras.map(c=>{
+    const est=c.estado==='borrador'?'Borrador':c.estado==='anulada'?'Anulada':(c.estado_pago==='pagada'?'Pagada':c.estado_pago==='parcial'?'Pago parcial':'A pagar');
+    const acc=c.estado==='borrador'?`<button class="btn btn-sm" data-cedit="${c.id}">Editar</button> <button class="btn btn-sm btn-primary" data-cconf="${c.id}">Confirmar</button> <button class="btn btn-sm btn-danger" data-cdel="${c.id}">Eliminar</button>`
+      :c.estado==='confirmada'?`<button class="btn btn-sm" data-cver="${c.id}">Ver</button> <button class="btn btn-sm btn-danger" data-canul="${c.id}">Anular</button>`:`<button class="btn btn-sm" data-cver="${c.id}">Ver</button>`;
+    return `<tr><td>${fecha(c.fecha)}</td><td>${escapeHtml(provNombre(c.proveedor_id))}</td><td>${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'')}</td><td>${est}</td><td>${money(c.total)}</td><td>${acc}</td></tr>`;}).join('');
+  return `<div class="page-header"><div><h2>Compras</h2><p>Cargá facturas como borrador; al confirmar, el stock se actualiza automáticamente.</p></div>
+    <button class="btn btn-primary" id="btn-nueva-compra">Nueva compra</button></div>
+    ${state.compras.length?`<div class="card"><table><thead><tr><th>Fecha</th><th>Proveedor</th><th>Comprobante</th><th>Estado</th><th>Total</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`
+    :`<div class="empty-state"><h3>Sin compras registradas</h3><p>Necesitás al menos un proveedor y productos cargados.</p></div>`}`;
+}
+function bindCompras(){
+  const b=document.getElementById('btn-nueva-compra');if(b)b.addEventListener('click',()=>openModalCompra());
+  const get=id=>state.compras.find(c=>c.id===id);
+  $$('[data-cedit]',x=>x.addEventListener('click',()=>openModalCompra(get(x.dataset.cedit))));
+  $$('[data-cver]',x=>x.addEventListener('click',()=>verCompra(get(x.dataset.cver))));
+  $$('[data-cconf]',x=>x.addEventListener('click',async()=>{
+    if(!confirm('¿Confirmar la compra? Se sumará el stock de todos sus productos.'))return;
+    const r=await rpcOk('confirmar_compra',{p_compra_id:x.dataset.cconf,p_usuario:getUsuario()},'Compra confirmada y stock actualizado.');
+    if(r.ok)await recargarTodoCompras();
+  }));
+  $$('[data-canul]',x=>x.addEventListener('click',async()=>{
+    const m=prompt('Motivo de la anulación (se revertirá el stock):');if(m===null)return;
+    const r=await rpcOk('anular_compra',{p_compra_id:x.dataset.canul,p_usuario:getUsuario(),p_motivo:m||null},'Compra anulada y stock revertido.');
+    if(r.ok)await recargarTodoCompras();
+  }));
+  $$('[data-cdel]',x=>x.addEventListener('click',async()=>{
+    if(!confirm('¿Eliminar este borrador?'))return;
+    if(await deleteRow('compras',x.dataset.cdel))await recargarTodoCompras();
+  }));
+}
+function verCompra(c){
+  const its=state.compraItems.filter(i=>i.compra_id===c.id);
+  openModal(`<h3>${escapeHtml(provNombre(c.proveedor_id))} — ${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'')}</h3>
+    <p style="font-size:13px">${fecha(c.fecha)} · ${c.estado}${c.usuario?' · '+escapeHtml(c.usuario):''}${c.notas?'<br>'+escapeHtml(c.notas):''}</p>
+    <table><thead><tr><th>Producto</th><th>Cant.</th><th>Costo</th><th>Subtotal</th></tr></thead><tbody>${its.map(i=>`<tr><td>${escapeHtml((state.productos.find(p=>p.id===i.producto_id)||{}).nombre||'—')}</td><td>${i.cantidad}</td><td>${money(i.costo_unitario)}</td><td>${money(i.cantidad*i.costo_unitario)}</td></tr>`).join('')}</tbody></table>
+    <p><strong>Total ${money(c.total)}</strong> · pagado ${money(c.pagado)}</p><div class="modal-actions"><button class="btn" id="m-cancel">Cerrar</button></div>`,
+  ()=>document.getElementById('m-cancel').addEventListener('click',closeModal));
+}
+function openModalCompra(c,pre){
+  if(!state.proveedores.length){showToast('Primero cargá un proveedor.');return;}
+  const prods=state.productos.filter(p=>!p.esCombo);
+  if(!prods.length){showToast('Primero cargá productos.');return;}
+  const items=c?state.compraItems.filter(i=>i.compra_id===c.id):[pre?{producto_id:pre.producto_id}:{}];
+  const row=it=>`<div class="ci-row" style="display:grid;grid-template-columns:1fr 70px 100px 30px;gap:6px;margin-bottom:6px"><select class="ci-prod">${optsHtml(prods,it.producto_id||'',p=>p.id,p=>p.nombre)}</select><input class="ci-cant" type="number" min="1" step="1" value="${it.cantidad||1}"><input class="ci-costo" type="number" min="0" step="0.01" placeholder="Costo" value="${it.costo_unitario!=null?it.costo_unitario:(state.costoUlt[it.producto_id||prods[0].id]??'')}"><button type="button" class="btn btn-sm ci-del">&times;</button></div>`;
+  c=c||{proveedor_id:pre&&pre.proveedor_id};
+  openModal(`<h3>${c.id?'Editar compra (borrador)':'Nueva compra'}</h3>
+    <div class="field"><label for="cp-prov">Proveedor</label><select id="cp-prov">${optsHtml(state.proveedores,c.proveedor_id||'',p=>p.id,p=>p.razon_social)}</select></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+      <div class="field"><label for="cp-tipo">Tipo</label><select id="cp-tipo">${['factura','orden','remito'].map(t=>`<option ${t===(c.tipo_comprobante||'factura')?'selected':''}>${t}</option>`).join('')}</select></div>
+      ${fld('cp-num','N° comprobante',c.numero_comprobante)}${fld('cp-fecha','Fecha',c.fecha?c.fecha.slice(0,10):hoyISO(),'date')}</div>
+    <label style="font-size:12.5px;color:var(--ink-soft)">Productos: cantidad y costo unitario</label><div id="ci-list">${items.map(row).join('')}</div>
+    <button class="btn btn-sm" id="ci-add" type="button">+ Producto</button>
+    <p style="margin-top:10px">Total: <strong id="cp-total">$ 0</strong></p>${fld('cp-notas','Notas',c.notas)}
+    <div class="field-error" id="m-error"></div>
+    <div class="modal-actions"><button class="btn" id="m-cancel">Cancelar</button><button class="btn" id="cp-borrador">Guardar borrador</button><button class="btn btn-primary" id="cp-confirmar">Guardar y confirmar</button></div>`,
+  ()=>{
+    const list=document.getElementById('ci-list');
+    const leer=()=>[...list.querySelectorAll('.ci-row')].map(r=>({producto_id:r.querySelector('.ci-prod').value,cantidad:parseInt(r.querySelector('.ci-cant').value,10),costo_unitario:parseFloat(r.querySelector('.ci-costo').value)}));
+    const recalc=()=>{document.getElementById('cp-total').textContent=money(leer().reduce((s,i)=>s+(i.cantidad>0&&i.costo_unitario>=0?i.cantidad*i.costo_unitario:0),0));};
+    recalc();
+    document.getElementById('m-cancel').addEventListener('click',closeModal);
+    document.getElementById('ci-add').addEventListener('click',()=>{list.insertAdjacentHTML('beforeend',row({}));recalc();});
+    list.addEventListener('input',recalc);
+    list.addEventListener('change',e=>{if(e.target.classList.contains('ci-prod')){const costo=e.target.closest('.ci-row').querySelector('.ci-costo');if(costo.value==='')costo.value=state.costoUlt[e.target.value]??'';recalc();}});
+    list.addEventListener('click',e=>{if(e.target.classList.contains('ci-del')){e.target.closest('.ci-row').remove();recalc();}});
+    const guardar=async confirmar=>{
+      const its=leer(),err=document.getElementById('m-error');
+      if(!its.length||its.some(i=>!(i.cantidad>0)||isNaN(i.costo_unitario)||i.costo_unitario<0)){err.textContent='Cada producto necesita cantidad mayor a 0 y un costo válido.';return;}
+      const id=c.id||uid();
+      const reg={id,proveedor_id:V('cp-prov'),tipo_comprobante:V('cp-tipo'),numero_comprobante:V('cp-num')||null,fecha:new Date(V('cp-fecha')+'T12:00:00').toISOString(),estado:'borrador',total:its.reduce((s,i)=>s+i.cantidad*i.costo_unitario,0),usuario:getUsuario(),notas:V('cp-notas')||null};
+      let {error}=await supabaseClient.from('compras').upsert(reg);
+      if(!error){await supabaseClient.from('compra_items').delete().eq('compra_id',id);({error}=await supabaseClient.from('compra_items').insert(its.map(i=>({...i,id:uid(),compra_id:id}))));}
+      if(error){console.error(error);err.textContent=error.message;return;}
+      if(confirmar){const r=await rpcOk('confirmar_compra',{p_compra_id:id,p_usuario:getUsuario()},'Compra confirmada y stock actualizado.');if(!r.ok){closeModal();await recargarTodoCompras();return;}}
+      else showToast('Borrador guardado.');
+      closeModal();await recargarTodoCompras();
+    };
+    document.getElementById('cp-borrador').addEventListener('click',()=>guardar(false));
+    document.getElementById('cp-confirmar').addEventListener('click',()=>guardar(true));
+  });
+}
+
+/* ============================= MOVIMIENTOS DE STOCK ============================= */
+function renderMovStock(){
+  const lista=state.movs.filter(m=>state.filtroMov==='todos'||m.tipo===state.filtroMov);
+  const filas=lista.map(m=>`<tr><td>${fecha(m.fecha)}</td><td>${escapeHtml((state.productos.find(p=>p.id===m.producto_id)||{}).nombre||'—')}</td><td>${TIPO_MOV[m.tipo]||m.tipo}</td>
+    <td style="font-weight:700;color:${m.cantidad>0?'var(--teal)':'var(--red)'}">${m.cantidad>0?'+':''}${m.cantidad}</td><td>${m.stock_resultante}</td><td>${escapeHtml(m.usuario||'')}</td><td>${escapeHtml(m.motivo||'')}</td></tr>`).join('');
+  return `<div class="page-header"><div><h2>Movimientos de stock</h2><p>Registro inmutable de entradas, salidas, ajustes y pérdidas (últimos 300).</p></div>
+    <div style="display:flex;gap:8px"><select id="f-mov"><option value="todos">Todos los tipos</option>${Object.keys(TIPO_MOV).map(t=>`<option value="${t}" ${t===state.filtroMov?'selected':''}>${TIPO_MOV[t]}</option>`).join('')}</select>
+    <button class="btn btn-primary" id="btn-nuevo-mov">Nuevo movimiento</button></div></div>
+    ${lista.length?`<div class="card"><table><thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cant.</th><th>Stock</th><th>Usuario</th><th>Motivo</th></tr></thead><tbody>${filas}</tbody></table></div>`
+    :`<div class="empty-state"><h3>Sin movimientos</h3><p>Acá aparecen las compras, ventas, ajustes y pérdidas de stock.</p></div>`}`;
+}
+function bindMovStock(){
+  document.getElementById('f-mov').addEventListener('change',e=>{state.filtroMov=e.target.value;render();});
+  document.getElementById('btn-nuevo-mov').addEventListener('click',openModalMovStock);
+}
+function openModalMovStock(){
+  const prods=state.productos.filter(p=>!p.esCombo);
+  if(!prods.length){showToast('Primero cargá productos.');return;}
+  const tipos=['entrada_devolucion','salida_merma','perdida_rotura','perdida_vencimiento','perdida_robo','ajuste'];
+  openModal(`<h3>Nuevo movimiento de stock</h3>
+    <div class="field"><label for="ms-prod">Producto</label><select id="ms-prod">${optsHtml(prods,'',p=>p.id,p=>p.nombre+' (stock '+p.stock+')')}</select></div>
+    <div class="field"><label for="ms-tipo">Tipo</label><select id="ms-tipo">${tipos.map(t=>`<option value="${t}">${TIPO_MOV[t]}</option>`).join('')}</select></div>
+    <div class="field"><label for="ms-cant" id="ms-lbl">Cantidad</label><input type="number" id="ms-cant" step="1" placeholder="0"></div>
+    ${fld('ms-motivo','Motivo / comentario (obligatorio en ajustes y pérdidas)','')}<div class="field-error" id="m-error"></div>
+    <div class="modal-actions"><button class="btn" id="m-cancel">Cancelar</button><button class="btn btn-primary" id="m-ok">Registrar</button></div>`,
+  ()=>{
+    document.getElementById('m-cancel').addEventListener('click',closeModal);
+    document.getElementById('ms-tipo').addEventListener('change',e=>{document.getElementById('ms-lbl').textContent=e.target.value==='ajuste'?'Diferencia (+ suma, − resta)':'Cantidad';});
+    document.getElementById('m-ok').addEventListener('click',async()=>{
+      const cant=parseInt(V('ms-cant'),10),tipo=V('ms-tipo');
+      if(isNaN(cant)||cant===0){document.getElementById('m-error').textContent='Ingresá una cantidad distinta de 0.';return;}
+      const r=await rpcOk('registrar_movimiento_manual',{p_producto:V('ms-prod'),p_tipo:tipo,p_cantidad:cant,p_usuario:getUsuario(),p_motivo:V('ms-motivo')||null},'Movimiento registrado.');
+      if(r.ok){closeModal();await refrescarStock();await recargarMovs();render();}
+    });
+  });
+}
+
+/* ============================= STOCK BAJO ============================= */
+const getUmbral=()=>{const n=parseInt(localStorage.getItem('pos_umbral_stock'),10);return isNaN(n)||n<0?3:n;};
+function ultimoProveedorDe(prodId){
+  const ids=new Set(state.compraItems.filter(i=>i.producto_id===prodId).map(i=>i.compra_id));
+  const c=state.compras.find(x=>ids.has(x.id)&&x.estado==='confirmada'); // ya vienen de la más nueva a la más vieja
+  return c?c.proveedor_id:null;
+}
+function renderStockBajo(){
+  const u=getUmbral();
+  const lista=state.productos.filter(p=>!p.esCombo&&p.stock<=u).sort((a,b)=>a.stock-b.stock||a.nombre.localeCompare(b.nombre));
+  const ag=lista.filter(p=>p.stock<=0).length;
+  const filas=lista.map(p=>{
+    const r=state.rubros.find(x=>x.id===p.rubroId), pv=ultimoProveedorDe(p.id), cu=state.costoUlt[p.id];
+    return `<tr><td><strong>${escapeHtml(p.nombre)}</strong></td><td>${escapeHtml(r?r.nombre:'—')}</td>
+      <td><strong style="color:${p.stock<=0?'var(--red)':'var(--amber)'}">${p.stock<=0?'Agotado':p.stock}</strong></td>
+      <td>${cu!=null?money(cu):'—'}</td><td>${pv?escapeHtml(provNombre(pv)):'—'}</td>
+      <td><button class="btn btn-sm btn-primary" data-repo="${p.id}">Reponer</button></td></tr>`;}).join('');
+  return `<div class="page-header"><div><h2>Stock bajo</h2><p>${lista.length} producto(s) con stock igual o menor a ${u}${ag?` — <strong style="color:var(--red)">${ag} agotado(s)</strong>`:''}.</p></div>
+    <div class="field" style="margin:0;display:flex;align-items:center;gap:8px"><label for="umbral-stock" style="margin:0">Avisar cuando quede</label><input type="number" id="umbral-stock" min="0" step="1" value="${u}" style="width:70px"></div></div>
+    ${lista.length?`<div class="card"><table><thead><tr><th>Producto</th><th>Rubro</th><th>Stock</th><th>Último costo</th><th>Último proveedor</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`
+    :`<div class="empty-state"><h3>Todo en orden</h3><p>Ningún producto está en ${u} unidades o menos.</p></div>`}`;
+}
+function bindStockBajo(){
+  document.getElementById('umbral-stock').addEventListener('change',e=>{const n=parseInt(e.target.value,10);localStorage.setItem('pos_umbral_stock',isNaN(n)||n<0?3:n);render();});
+  $$('[data-repo]',x=>x.addEventListener('click',()=>openModalCompra(null,{producto_id:x.dataset.repo,proveedor_id:ultimoProveedorDe(x.dataset.repo)||undefined})));
+}
+
+/* ============================= CUENTAS A PAGAR ============================= */
+function diasHasta(f){if(!f)return null;return Math.round((new Date(f+'T00:00:00')-new Date(hoyISO()+'T00:00:00'))/86400000);}
+function renderCuentasPagar(){
+  const pend=state.compras.filter(c=>c.estado==='confirmada'&&c.total>c.pagado).map(c=>({...c,saldo:c.total-c.pagado,dias:diasHasta(c.fecha_vencimiento)}));
+  const venc=pend.filter(c=>c.dias!==null&&c.dias<0), prox=pend.filter(c=>c.dias!==null&&c.dias>=0&&c.dias<=7);
+  const suma=l=>l.reduce((s,c)=>s+c.saldo,0);
+  const f=state.filtroCP||'todas';
+  const lista=(f==='vencidas'?venc:f==='proximas'?prox:pend).slice().sort((a,b)=>(a.fecha_vencimiento||'9999')<(b.fecha_vencimiento||'9999')?-1:1);
+  const estado=c=>c.dias===null?'Sin vencimiento':c.dias<0?`<span style="color:var(--red);font-weight:600">Vencida hace ${-c.dias} día(s)</span>`:c.dias===0?'<span style="color:var(--amber);font-weight:600">Vence hoy</span>':c.dias<=7?`<span style="color:var(--amber);font-weight:600">Vence en ${c.dias} día(s)</span>`:'Al día';
+  const filas=lista.map(c=>`<tr><td>${c.fecha_vencimiento?new Date(c.fecha_vencimiento+'T00:00:00').toLocaleDateString('es-AR'):'—'}</td><td>${escapeHtml(provNombre(c.proveedor_id))}</td>
+    <td>${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'')}</td><td>${money(c.total)}</td><td>${money(c.pagado)}</td><td><strong>${money(c.saldo)}</strong></td><td>${estado(c)}</td>
+    <td><button class="btn btn-sm btn-primary" data-cp-pagar="${c.id}">Pagar</button> <button class="btn btn-sm" data-cp-ver="${c.id}">Ver</button></td></tr>`).join('');
+  const kpi=(t,v,col)=>`<div class="card" style="padding:14px 16px"><div style="font-size:12.5px;color:var(--ink-soft)">${t}</div><div style="font-size:22px;font-weight:700;${col?'color:'+col:''}">${money(v)}</div></div>`;
+  const pagos=state.pagos.slice(0,8);
+  return `<div class="page-header"><div><h2>Cuentas a pagar</h2><p>Facturas confirmadas con saldo pendiente, ordenadas por vencimiento.</p></div>
+    <select id="f-cp"><option value="todas" ${f==='todas'?'selected':''}>Todas (${pend.length})</option><option value="vencidas" ${f==='vencidas'?'selected':''}>Vencidas (${venc.length})</option><option value="proximas" ${f==='proximas'?'selected':''}>Vencen en 7 días (${prox.length})</option></select></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px">${kpi('Total adeudado',suma(pend))}${kpi('Vencido',suma(venc),venc.length?'var(--red)':'')}${kpi('Vence en 7 días',suma(prox),prox.length?'var(--amber)':'')}</div>
+    ${lista.length?`<div class="card"><table><thead><tr><th>Vence</th><th>Proveedor</th><th>Comprobante</th><th>Total</th><th>Pagado</th><th>Saldo</th><th>Estado</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`
+    :`<div class="empty-state"><h3>No hay facturas para mostrar</h3><p>No tenés deudas con este filtro.</p></div>`}
+    ${pagos.length?`<h4 style="margin:20px 0 8px">Últimos pagos</h4><div class="card"><table><tbody>${pagos.map(x=>`<tr><td>${fecha(x.fecha)}</td><td>${escapeHtml(provNombre(x.proveedor_id))}</td><td>${escapeHtml(x.medio_pago)}</td><td><strong>${money(x.monto)}</strong></td><td>${escapeHtml(x.usuario||'')}</td></tr>`).join('')}</tbody></table></div>`:''}`;
+}
+function bindCuentasPagar(){
+  document.getElementById('f-cp').addEventListener('change',e=>{state.filtroCP=e.target.value;render();});
+  const get=id=>state.compras.find(c=>c.id===id);
+  $$('[data-cp-pagar]',x=>x.addEventListener('click',()=>{const c=get(x.dataset.cpPagar);openModalPago(c.proveedor_id,c.id);}));
+  $$('[data-cp-ver]',x=>x.addEventListener('click',()=>verCompra(get(x.dataset.cpVer))));
+}
+
 /* ============================= NAV ============================= */
 const NAV = [
   {id:'dashboard', label:'Dashboard', icon:'&#9632;'},
@@ -1196,6 +1528,11 @@ const NAV = [
   {id:'cobranzas', label:'Cobranzas', icon:'&#128176;'},
   {id:'caja', label:'Caja', icon:'&#128176;'},
   {id:'productos', label:'Productos', icon:'&#128230;'},
+  {id:'proveedores', label:'Proveedores', icon:'&#128666;'},
+  {id:'compras', label:'Compras', icon:'&#128717;'},
+  {id:'movstock', label:'Mov. de stock', icon:'&#128260;'},
+  {id:'stockbajo', label:'Stock bajo', icon:'&#9888;'},
+  {id:'cuentaspagar', label:'Cuentas a pagar', icon:'&#129534;'},
   {id:'rubros', label:'Rubros', icon:'&#127991;'},
   {id:'historial', label:'Historial', icon:'&#128203;'},
 ];
@@ -1252,6 +1589,11 @@ function renderView(){
     case 'porrubro': return renderVentasPorRubro();
     case 'caja': return renderCaja();
     case 'productos': return renderProductos();
+    case 'proveedores': return renderProveedores();
+    case 'compras': return renderCompras();
+    case 'movstock': return renderMovStock();
+    case 'stockbajo': return renderStockBajo();
+    case 'cuentaspagar': return renderCuentasPagar();
     case 'rubros': return renderRubros();
     case 'historial': return renderHistorial();
     default: return '';
@@ -1267,6 +1609,11 @@ function bindView(){
     case 'porrubro': return bindVentasPorRubro();
     case 'caja': return bindCaja();
     case 'productos': return bindProductos();
+    case 'proveedores': return bindProveedores();
+    case 'compras': return bindCompras();
+    case 'movstock': return bindMovStock();
+    case 'stockbajo': return bindStockBajo();
+    case 'cuentaspagar': return bindCuentasPagar();
     case 'rubros': return bindRubros();
     case 'historial': return bindHistorial();
   }
@@ -1732,28 +2079,20 @@ async function cobrarVenta(){
     medioPago: state.medioPago,
     clienteNombre: state.clienteNombre || 'Consumidor final',
   };
-  const {error}=await supabaseClient.from('ventas').insert({
-    id:venta.id, numero:venta.numero, fecha:venta.fecha, caja_id:venta.cajaId, items:venta.items,
-    subtotal:venta.subtotal, ajuste_tipo:venta.ajusteTipo, ajuste_porcentaje:venta.ajustePorcentaje, ajuste_monto:venta.ajusteMonto,
-    total:venta.total, medio_pago:venta.medioPago
-  });
-  if(error){
-    console.error(error);
-    showToast('No se pudo registrar la venta. Mirá la consola (F12) para el detalle del error.');
-    return;
+  let numeroVenta = venta.numero;
+  if(state.moduloListo){
+    const r=await rpcOk('registrar_venta',{p_id:venta.id,p_fecha:venta.fecha,p_caja_id:venta.cajaId,p_items:venta.items,p_subtotal:venta.subtotal,p_ajuste_tipo:venta.ajusteTipo,p_ajuste_pct:venta.ajustePorcentaje,p_ajuste_monto:venta.ajusteMonto,p_total:venta.total,p_medio_pago:venta.medioPago,p_usuario:getUsuario()});
+    if(!r.ok){ await refrescarStock(); render(); return; }
+    numeroVenta = r.data || numeroVenta;
+  } else {
+    const {error}=await supabaseClient.from('ventas').insert({
+      id:venta.id, numero:venta.numero, fecha:venta.fecha, caja_id:venta.cajaId, items:venta.items,
+      subtotal:venta.subtotal, ajuste_tipo:venta.ajusteTipo, ajuste_porcentaje:venta.ajustePorcentaje, ajuste_monto:venta.ajusteMonto,
+      total:venta.total, medio_pago:venta.medioPago
+    });
+    if(error){ console.error(error); showToast('No se pudo registrar la venta. Mirá la consola (F12) para el detalle del error.'); return; }
   }
-  state.ticket.forEach(i=>{
-    const p = state.productos.find(x=>x.id===i.id);
-    if(!p) return;
-    if(p.esCombo){
-      p.comboItems.forEach(ci=>{
-        const comp = state.productos.find(x=>x.id===ci.productoId);
-        if(comp) comp.stock = Math.max(0, comp.stock - ci.cantidad*i.cantidad);
-      });
-    } else {
-      p.stock = Math.max(0, p.stock - i.cantidad);
-    }
-  });
+  venta.numero = numeroVenta;
   state.ventas.push(venta);
   state.ultimaVenta = venta;
   state.ticket = [];
@@ -1761,7 +2100,13 @@ async function cobrarVenta(){
   state.clienteNombre = '';
   state.ajusteTipo = 'ninguno';
   state.ajustePorcentaje = '';
-  await saveProductos();
+  if(state.moduloListo){ await refrescarStock(); await recargarMovs(); }
+  else {
+    venta.items.forEach(i=>{ const p=state.productos.find(x=>x.id===i.productoId); if(!p) return;
+      if(p.esCombo) p.comboItems.forEach(ci=>{ const c=state.productos.find(x=>x.id===ci.productoId); if(c) c.stock=Math.max(0,c.stock-ci.cantidad*i.cantidad); });
+      else p.stock=Math.max(0,p.stock-i.cantidad); });
+    await saveProductos();
+  }
   render();
   showToast('Venta registrada.');
 }

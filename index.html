@@ -1169,6 +1169,7 @@ async function loadAll(){
     state.ventas=(ve.data||[]).map(v=>({id:v.id,numero:v.numero,fecha:v.fecha,cajaId:v.caja_id,items:v.items||[],subtotal:v.subtotal!=null?Number(v.subtotal):Number(v.total),ajusteTipo:v.ajuste_tipo||'ninguno',ajustePorcentaje:v.ajuste_porcentaje!=null?Number(v.ajuste_porcentaje):0,ajusteMonto:v.ajuste_monto!=null?Number(v.ajuste_monto):0,total:Number(v.total),medioPago:v.medio_pago,clienteNombre:v.cliente_nombre||'Consumidor final'}));
     state.historial=(hi.data||[]).map(h=>({id:h.id,fechaApertura:h.fecha_apertura,fechaCierre:h.fecha_cierre,montoInicial:Number(h.monto_inicial),porMedio:h.por_medio||{},totalVentas:Number(h.total_ventas),ingresosManuales:Number(h.ingresos_manuales),egresosManuales:Number(h.egresos_manuales),efectivoEsperado:Number(h.efectivo_esperado),montoContado:Number(h.monto_contado),diferencia:Number(h.diferencia),cajaId:h.caja_id}));
     await loadCompras();
+    await loadCobranzas();
   }catch(e){ console.error(e); showToast('No se pudieron cargar los datos de Supabase.'); }
 }
 async function saveProductos(){
@@ -1646,9 +1647,9 @@ function renderDashboard(){
   const dias=state.dashDias||30, ini=new Date();ini.setHours(0,0,0,0);ini.setDate(ini.getDate()-(dias-1));
   const ventas=(state.ventas||[]).filter(v=>new Date(v.fecha)>=ini);
   const totalP=ventas.reduce((s,v)=>s+Number(v.total||0),0);
-  const porDia={},medios={},rub={},prod={};
+  const porDia={},cnt={},medios={},rub={},prod={};
   ventas.forEach(v=>{
-    const k=new Date(v.fecha).toLocaleDateString('en-CA');porDia[k]=(porDia[k]||0)+Number(v.total||0);
+    const k=new Date(v.fecha).toLocaleDateString('en-CA');porDia[k]=(porDia[k]||0)+Number(v.total||0);cnt[k]=(cnt[k]||0)+1;
     const m=v.medioPago||'otro';medios[m]=(medios[m]||0)+Number(v.total||0);
     (v.items||[]).forEach(i=>{
       const p=state.productos.find(x=>x.id===i.productoId),monto=(i.precio||0)*(i.cantidad||0);
@@ -1657,6 +1658,10 @@ function renderDashboard(){
     });
   });
   const serie=[];for(let i=0;i<dias;i++){const d=new Date(ini);d.setDate(ini.getDate()+i);serie.push({label:d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}),value:porDia[d.toLocaleDateString('en-CA')]||0});}
+  const hoyK=new Date().toLocaleDateString('en-CA'),porHora=Array.from({length:24},(_,h)=>({label:String(h).padStart(2,'0')+'h',value:0}));let totHoy=0,nHoy=0;
+  (state.ventas||[]).forEach(v=>{const d=new Date(v.fecha);if(d.toLocaleDateString('en-CA')===hoyK){porHora[d.getHours()].value+=Number(v.total||0);totHoy+=Number(v.total||0);nHoy++;}});
+  const filasDia=serie.map((s,i)=>{const d=new Date(ini);d.setDate(ini.getDate()+i);const k=d.toLocaleDateString('en-CA');return {fecha:d.toLocaleDateString('es-AR',{weekday:'short',day:'2-digit',month:'2-digit'}),n:cnt[k]||0,total:porDia[k]||0};}).filter(x=>x.n>0).reverse();
+  const tablaDia=`<div style="max-height:260px;overflow:auto"><table><thead><tr><th>Día</th><th>Ventas</th><th>Total</th><th>Ticket prom.</th></tr></thead><tbody>${filasDia.map(x=>`<tr><td>${x.fecha}</td><td>${x.n}</td><td><strong>${moneda(x.total)}</strong></td><td>${moneda(x.total/x.n)}</td></tr>`).join('')}</tbody></table></div>`;
   const top=(o,n)=>Object.entries(o).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value).slice(0,n);
   const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
   const card=(t,body)=>`<div class="card" style="padding:16px 18px"><h4 style="margin:0 0 10px">${t}</h4>${body}</div>`;
@@ -1664,6 +1669,10 @@ function renderDashboard(){
     <div style="display:flex;gap:6px">${[7,30,90].map(d=>`<button class="rubro-tab ${d===dias?'active':''}" data-dias="${d}">${d} días</button>`).join('')}</div></div>
     ${ventas.length?`<div style="display:grid;gap:16px">
       ${card('Ventas por día',chartBarras(serie))}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
+        ${card('Ventas de hoy por hora — '+moneda(totHoy)+' ('+nHoy+' venta'+(nHoy===1?'':'s')+')',chartBarras(porHora))}
+        ${card('Detalle de ventas diarias',tablaDia)}
+      </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
         ${card('Ventas por medio de pago',chartDonut(top(medios,5).map(d=>({...d,label:cap(d.label)}))))}
         ${card('Ventas por rubro',chartHBarras(top(rub,6),'var(--teal)'))}
@@ -1692,96 +1701,99 @@ function renderDebtRows(){
     </div>`).join('')}</div>`;
 }
 
-/* ============================= COBRANZAS — FRONTEND ONLY ============================= */
-const MOCK_COBROS = [
-  {id:'FC-000124',cliente:'Juan Pérez',vence:'25/09/2026',estado:'Vencido',monto:85000,telefono:'381 555 0101'},
-  {id:'FC-000125',cliente:'María López',vence:'28/09/2026',estado:'Pendiente',monto:42000,telefono:'381 555 0122'},
-  {id:'FC-000126',cliente:'Pedro Gómez',vence:'30/09/2026',estado:'Pendiente',monto:67000,telefono:'381 555 0188'},
-  {id:'FC-000127',cliente:'Comercial Norte',vence:'02/10/2026',estado:'Pendiente',monto:125000,telefono:'381 555 0220'},
-  {id:'FC-000118',cliente:'Lucía Fernández',vence:'18/09/2026',estado:'Pagado',monto:55000,telefono:'381 555 0340'}
-];
-
+/* ============================= COBRANZAS (cuentas por cobrar, guardadas en Supabase) ============================= */
+state.cobros=[];state.cobranzasListo=false;
+async function loadCobranzas(){
+  const {data,error}=await supabaseClient.from('cobranzas').select('*').order('vence',{ascending:true});
+  if(error){console.error(error);state.cobranzasListo=false;return;}
+  state.cobros=(data||[]).map(c=>({...c,monto:N(c.monto),pagado:N(c.pagado)}));state.cobranzasListo=true;
+}
+const saldoCobro=c=>c.monto-c.pagado;
+const estadoCobro=c=>saldoCobro(c)<=0?'Pagado':(c.vence&&diasHasta(c.vence)<0?'Vencido':'Pendiente');
+const iniciales=s=>String(s||'?').split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase();
 function renderCobranzas(){
+  if(!state.cobranzasListo) return `<div class="page-header"><div><h2>Cobranzas</h2></div></div><div class="empty-state"><h3>Falta crear la tabla de cobranzas</h3><p>Ejecutá supabase_cobranzas.sql en el SQL Editor de Supabase y recargá la página.</p></div>`;
+  const abiertas=state.cobros.filter(c=>estadoCobro(c)!=='Pagado'),suma=l=>l.reduce((s,c)=>s+saldoCobro(c),0);
+  const venc=abiertas.filter(c=>estadoCobro(c)==='Vencido');
+  const prox=abiertas.filter(c=>{const d=c.vence?diasHasta(c.vence):null;return d!==null&&d>=0&&d<=7;});
   return `
-    <div class="page-header modern-header">
-      <div>
-        <div class="eyebrow">CUENTAS POR COBRAR</div>
-        <h2>Cobranzas</h2>
-        <p>Gestioná pendientes, vencimientos y pagos desde una sola pantalla.</p>
-      </div>
-      <button class="btn btn-primary" id="openCobroModal">+ Registrar cobro</button>
-    </div>
-
+    <div class="page-header modern-header"><div><div class="eyebrow">CUENTAS POR COBRAR</div><h2>Cobranzas</h2><p>Gestioná clientes, pendientes, vencimientos y cobros.</p></div>
+      <button class="btn btn-primary" id="openCobroModal">+ Nuevo cliente / cuenta</button></div>
     <section class="modern-kpis cobranzas-kpis">
-      <article class="modern-kpi"><div class="kpi-icon blue">↗</div><div><span>Total pendiente</span><strong>$ 430.000</strong><small>12 cuentas abiertas</small></div></article>
-      <article class="modern-kpi danger"><div class="kpi-icon red">!</div><div><span>Total vencido</span><strong>$ 185.000</strong><small>5 clientes</small></div></article>
-      <article class="modern-kpi"><div class="kpi-icon">✓</div><div><span>Cobrado este mes</span><strong>$ 1.250.000</strong><small class="positive">+8,2%</small></div></article>
-      <article class="modern-kpi"><div class="kpi-icon amber">◷</div><div><span>Próximos 7 días</span><strong>$ 234.000</strong><small>7 vencimientos</small></div></article>
+      <article class="modern-kpi"><div class="kpi-icon blue">↗</div><div><span>Total pendiente</span><strong>${moneda(suma(abiertas))}</strong><small>${abiertas.length} cuenta(s) abierta(s)</small></div></article>
+      <article class="modern-kpi danger"><div class="kpi-icon red">!</div><div><span>Total vencido</span><strong>${moneda(suma(venc))}</strong><small>${new Set(venc.map(c=>c.cliente)).size} cliente(s)</small></div></article>
+      <article class="modern-kpi"><div class="kpi-icon amber">◷</div><div><span>Próximos 7 días</span><strong>${moneda(suma(prox))}</strong><small>${prox.length} vencimiento(s)</small></div></article>
     </section>
-
-    <div class="collection-toolbar">
-      <div class="search-box"><span>⌕</span><input id="cobroSearch" placeholder="Buscar cliente, comprobante o teléfono..."></div>
-      <select id="cobroStatus"><option value="">Todos los estados</option><option>Pagado</option><option>Pendiente</option><option>Vencido</option></select>
-      <select><option>Todos los vencimientos</option><option>Hoy</option><option>Esta semana</option><option>Este mes</option></select>
-    </div>
-
-    <section class="dashboard-panel collection-table-panel">
-      <div class="panel-head"><div><h3>Cuentas</h3><p>Listado de obligaciones y pagos</p></div><span class="result-count" id="cobroCount">5 registros</span></div>
+    <div class="collection-toolbar"><div class="search-box"><span>⌕</span><input id="cobroSearch" placeholder="Buscar cliente, comprobante o teléfono..."></div>
+      <select id="cobroStatus"><option value="">Todos los estados</option><option>Pagado</option><option>Pendiente</option><option>Vencido</option></select></div>
+    ${state.cobros.length?`<section class="dashboard-panel collection-table-panel">
+      <div class="panel-head"><div><h3>Cuentas</h3><p>Listado de clientes y obligaciones</p></div><span class="result-count" id="cobroCount">${state.cobros.length} registros</span></div>
       <div class="table-scroll"><table class="collection-table"><thead><tr><th>Cliente</th><th>Comprobante</th><th>Vencimiento</th><th>Estado</th><th>Saldo</th><th></th></tr></thead>
-      <tbody id="cobroTableBody">${renderCobroRows(MOCK_COBROS)}</tbody></table></div>
-    </section>
-  `;
+      <tbody>${renderCobroRows(state.cobros)}</tbody></table></div></section>`
+    :`<div class="empty-state"><h3>Todavía no cargaste clientes</h3><p>Agregá un cliente con su deuda para empezar a hacer seguimiento de cobros.</p></div>`}`;
 }
 function renderCobroRows(rows){
-  return rows.map((r,i)=>`
-    <tr data-cobro-row data-search="${(r.cliente+' '+r.id+' '+r.telefono).toLowerCase()}" data-status="${r.estado}">
-      <td><div class="table-client"><div class="customer-avatar">${r.cliente.split(' ').map(x=>x[0]).slice(0,2).join('')}</div><div><strong>${r.cliente}</strong><span>${r.telefono}</span></div></div></td>
-      <td><strong>${r.id}</strong></td>
-      <td>${r.vence}</td>
-      <td><span class="status-pill ${r.estado==='Vencido'?'danger':r.estado==='Pagado'?'success':'warning'}">${r.estado}</span></td>
-      <td><strong class="table-amount">$ ${money(r.monto)}</strong></td>
-      <td><div class="table-actions">${r.estado!=='Pagado'?`<button class="row-action collect-action" data-id="${r.id}">Cobrar</button>`:''}<button class="icon-action" title="Ver estado de cuenta">⋯</button></div></td>
-    </tr>`).join('');
+  return rows.map(r=>{const est=estadoCobro(r);return `
+    <tr data-cobro-row data-search="${escapeHtml((r.cliente+' '+(r.comprobante||'')+' '+(r.telefono||'')).toLowerCase())}" data-status="${est}">
+      <td><div class="table-client"><div class="customer-avatar">${escapeHtml(iniciales(r.cliente))}</div><div><strong>${escapeHtml(r.cliente)}</strong><span>${escapeHtml(r.telefono||'')}</span></div></div></td>
+      <td><strong>${escapeHtml(r.comprobante||'—')}</strong></td>
+      <td>${r.vence?new Date(r.vence+'T00:00:00').toLocaleDateString('es-AR'):'—'}</td>
+      <td><span class="status-pill ${est==='Vencido'?'danger':est==='Pagado'?'success':'warning'}">${est}</span></td>
+      <td><strong class="table-amount">${moneda(saldoCobro(r))}</strong></td>
+      <td><div class="table-actions">${est!=='Pagado'?`<button class="row-action collect-action" data-id="${r.id}">Cobrar</button>`:''}
+        <button class="btn btn-sm" data-edit-cobro="${r.id}">Editar</button> <button class="btn btn-sm btn-danger" data-del-cobro="${r.id}">Eliminar</button></div></td>
+    </tr>`;}).join('');
 }
 function bindCobranzas(){
-  const search=document.getElementById('cobroSearch');
-  const status=document.getElementById('cobroStatus');
+  const search=document.getElementById('cobroSearch'),status=document.getElementById('cobroStatus');
   function filter(){
-    const q=(search?.value||'').toLowerCase().trim(), st=status?.value||'';
-    let visible=0;
-    document.querySelectorAll('[data-cobro-row]').forEach(row=>{
-      const okQ=!q || row.dataset.search.includes(q);
-      const okS=!st || row.dataset.status===st;
-      row.style.display=okQ&&okS?'':'none';
-      if(okQ&&okS) visible++;
-    });
-    const c=document.getElementById('cobroCount'); if(c)c.textContent=visible+' registros';
+    const q=(search?.value||'').toLowerCase().trim(),st=status?.value||'';let visible=0;
+    document.querySelectorAll('[data-cobro-row]').forEach(row=>{const ok=(!q||row.dataset.search.includes(q))&&(!st||row.dataset.status===st);row.style.display=ok?'':'none';if(ok)visible++;});
+    const c=document.getElementById('cobroCount');if(c)c.textContent=visible+' registros';
   }
-  search?.addEventListener('input',filter); status?.addEventListener('change',filter);
-  document.getElementById('openCobroModal')?.addEventListener('click',()=>openCobroFrontendModal());
-  document.querySelectorAll('.collect-action').forEach(b=>b.addEventListener('click',()=>openCobroFrontendModal(b.dataset.id)));
-  document.querySelectorAll('.row-action[data-nav="cobranzas"]').forEach(b=>b.addEventListener('click',()=>setView('cobranzas')));
+  search?.addEventListener('input',filter);status?.addEventListener('change',filter);
+  const get=id=>state.cobros.find(c=>c.id===id);
+  document.getElementById('openCobroModal')?.addEventListener('click',()=>openModalCobro());
+  $$('.collect-action',b=>b.addEventListener('click',()=>openModalCobrar(get(b.dataset.id))));
+  $$('[data-edit-cobro]',b=>b.addEventListener('click',()=>openModalCobro(get(b.dataset.editCobro))));
+  $$('[data-del-cobro]',b=>b.addEventListener('click',async()=>{
+    const c=get(b.dataset.delCobro);
+    if(!confirm(`¿Eliminar a ${c.cliente} y su cuenta${saldoCobro(c)>0?' (debe '+moneda(saldoCobro(c))+')':''}? No se puede deshacer.`))return;
+    if(await deleteRow('cobranzas',c.id)){await loadCobranzas();render();showToast('Cliente eliminado.');}
+  }));
 }
-function openCobroFrontendModal(id){
-  const item=MOCK_COBROS.find(x=>x.id===id)||MOCK_COBROS[0];
-  const existing=document.getElementById('frontendCobroModal'); existing?.remove();
-  const el=document.createElement('div'); el.id='frontendCobroModal'; el.className='frontend-modal-backdrop';
-  el.innerHTML=`
-    <div class="frontend-modal">
-      <div class="modal-top"><div><span class="eyebrow">NUEVO COBRO</span><h3>Registrar pago</h3></div><button class="modal-close" aria-label="Cerrar">×</button></div>
-      <div class="modal-client"><div class="customer-avatar big">${item.cliente.split(' ').map(x=>x[0]).slice(0,2).join('')}</div><div><strong>${item.cliente}</strong><span>${item.id} · Vencimiento ${item.vence}</span></div><strong class="modal-balance">$ ${money(item.monto)}</strong></div>
-      <label>Monto a cobrar<input id="frontendMonto" value="${item.monto}" inputmode="decimal"></label>
-      <label>Medio de pago<select><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option></select></label>
-      <label>Fecha del cobro<input type="date" value="2026-09-25"></label>
-      <label>Observaciones<textarea rows="3" placeholder="Opcional"></textarea></label>
-      <div class="modal-note">Esta pantalla es una maqueta frontend. No registra datos en Supabase.</div>
-      <div class="modal-footer"><button class="btn" id="cancelFrontendCobro">Cancelar</button><button class="btn btn-primary" id="confirmFrontendCobro">Confirmar cobro</button></div>
-    </div>`;
-  document.body.appendChild(el);
-  const close=()=>el.remove();
-  el.querySelector('.modal-close').onclick=close;
-  el.querySelector('#cancelFrontendCobro').onclick=close;
-  el.querySelector('#confirmFrontendCobro').onclick=()=>{ close(); toastFrontend('Cobro preparado correctamente'); };
+function openModalCobro(c){
+  c=c||{};
+  openModal(`<h3>${c.id?'Editar cliente / cuenta':'Nuevo cliente / cuenta'}</h3>
+    ${fld('cb-cli','Cliente',c.cliente)}${fld('cb-tel','Teléfono',c.telefono)}${fld('cb-comp','Comprobante',c.comprobante)}
+    ${fld('cb-vence','Vencimiento',c.vence||'','date')}${fld('cb-monto','Monto total adeudado',c.monto!=null?c.monto:'','number')}${fld('cb-notas','Notas',c.notas)}
+    <div class="field-error" id="m-error"></div>
+    <div class="modal-actions"><button class="btn" id="m-cancel">Cancelar</button><button class="btn btn-primary" id="m-ok">Guardar</button></div>`,
+  ()=>{
+    document.getElementById('m-cancel').addEventListener('click',closeModal);
+    document.getElementById('m-ok').addEventListener('click',async()=>{
+      const monto=parseFloat(V('cb-monto'));
+      if(!V('cb-cli')||isNaN(monto)||monto<0){document.getElementById('m-error').textContent='Ingresá el cliente y un monto válido.';return;}
+      const {error}=await supabaseClient.from('cobranzas').upsert({id:c.id||uid(),cliente:V('cb-cli'),telefono:V('cb-tel')||null,comprobante:V('cb-comp')||null,vence:V('cb-vence')||null,monto,pagado:c.pagado||0,notas:V('cb-notas')||null});
+      if(error){console.error(error);document.getElementById('m-error').textContent=error.message;return;}
+      closeModal();await loadCobranzas();render();showToast('Cliente guardado.');
+    });
+  });
+}
+function openModalCobrar(c){
+  openModal(`<h3>Registrar cobro — ${escapeHtml(c.cliente)}</h3><p style="font-size:13px">Saldo pendiente: <strong>${moneda(saldoCobro(c))}</strong></p>
+    ${fld('cc-monto','Monto cobrado',saldoCobro(c).toFixed(2),'number')}<div class="field-error" id="m-error"></div>
+    <div class="modal-actions"><button class="btn" id="m-cancel">Cancelar</button><button class="btn btn-primary" id="m-ok">Confirmar cobro</button></div>`,
+  ()=>{
+    document.getElementById('m-cancel').addEventListener('click',closeModal);
+    document.getElementById('m-ok').addEventListener('click',async()=>{
+      const m=parseFloat(V('cc-monto'));
+      if(isNaN(m)||m<=0||m>saldoCobro(c)+0.001){document.getElementById('m-error').textContent='El monto debe ser mayor a 0 y no superar el saldo.';return;}
+      const {error}=await supabaseClient.from('cobranzas').update({pagado:c.pagado+m}).eq('id',c.id);
+      if(error){console.error(error);document.getElementById('m-error').textContent=error.message;return;}
+      closeModal();await loadCobranzas();render();showToast('Cobro registrado.');
+    });
+  });
 }
 function toastFrontend(msg){
   const t=document.createElement('div');t.className='frontend-toast';t.textContent=msg;document.body.appendChild(t);

@@ -1175,7 +1175,8 @@ async function loadAll(){
     ]);
     for(const x of [rb,pr,cj,ve,mv,hi]) if(x.error) throw x.error;
     state.rubros=(rb.data||[]).map(r=>({id:r.id,nombre:r.nombre}));
-    state.productos=(pr.data||[]).map(p=>({id:p.id,nombre:p.nombre,precio:Number(p.precio),stock:Number(p.stock),rubroId:p.rubro_id,codigoBarras:p.codigo_barras||'',esCombo:!!p.es_combo,comboItems:p.combo_items||[]}));
+    state.productos=(pr.data||[]).filter(p=>p.activo!==false).map(p=>({id:p.id,nombre:p.nombre,precio:Number(p.precio),stock:Number(p.stock),rubroId:p.rubro_id,codigoBarras:p.codigo_barras||'',esCombo:!!p.es_combo,comboItems:p.combo_items||[]}));
+    state.archivados=(pr.data||[]).filter(p=>p.activo===false).map(p=>({id:p.id,nombre:p.nombre}));
     const c=(cj.data||[])[0];
     state.caja=c?{id:c.id,fechaApertura:c.fecha_apertura,montoInicial:Number(c.monto_inicial),
       movimientos:(mv.data||[]).filter(m=>m.caja_id===c.id).map(m=>({id:m.id,tipo:m.tipo,monto:Number(m.monto),motivo:m.motivo,fecha:m.fecha}))}:null;
@@ -1224,6 +1225,39 @@ async function deleteRow(table,id){
     showToast('No se eliminó nada en la base de datos. Falta permiso de DELETE (RLS) en Supabase.');
     return false;
   }
+  return true;
+}
+
+async function eliminarProducto(id){
+  const prod=state.productos.find(x=>x.id===id);
+  if(!prod) return false;
+  const {data,error}=await supabaseClient.from('productos').delete().eq('id',id).select('id');
+  let archivado=false;
+  if(error && error.code==='23503'){
+    // Tiene ventas / compras / movimientos de stock: se archiva para conservar el historial
+    if(!confirm(`"${prod.nombre}" tiene ventas o movimientos de stock asociados, así que no se puede borrar del todo.\n\n¿Archivarlo? Desaparece de Vender y Productos, pero el historial se conserva.`)) return false;
+    const up=await supabaseClient.from('productos').update({activo:false}).eq('id',id).select('id');
+    if(up.error){
+      console.error(up.error);
+      showToast(/activo/.test(up.error.message||'')?'Falta la columna "activo" en Supabase. Ejecutá el SQL de archivado.':'No se pudo archivar: '+up.error.message);
+      return false;
+    }
+    if(!up.data||up.data.length===0){ showToast('No se pudo archivar (falta permiso UPDATE en Supabase).'); return false; }
+    archivado=true;
+  }else if(error){
+    console.error(error); showToast('No se pudo eliminar: '+(error.message||'error desconocido')); return false;
+  }else if(!data||data.length===0){
+    showToast('No se eliminó nada en la base de datos. Falta permiso de DELETE (RLS) en Supabase.'); return false;
+  }
+  (state.archivados=state.archivados||[]);
+  if(archivado) state.archivados.push({id:prod.id,nombre:prod.nombre});
+  state.productos=state.productos.filter(p=>p.id!==id);
+  const afectados=state.productos.filter(p=>p.esCombo && p.comboItems.some(ci=>ci.productoId===id));
+  if(afectados.length>0){
+    afectados.forEach(p=>{ p.comboItems=p.comboItems.filter(ci=>ci.productoId!==id); });
+    await saveProductos();
+  }
+  showToast(archivado?'Producto archivado.':'Producto eliminado.');
   return true;
 }
 
@@ -1406,7 +1440,7 @@ function verCompra(c){
   const its=state.compraItems.filter(i=>i.compra_id===c.id);
   openModal(`<h3>${escapeHtml(provNombre(c.proveedor_id))} — ${escapeHtml(c.tipo_comprobante)} ${escapeHtml(c.numero_comprobante||'')}</h3>
     <p style="font-size:13px">${fecha(c.fecha)} · ${c.estado}${c.usuario?' · '+escapeHtml(c.usuario):''}${c.notas?'<br>'+escapeHtml(c.notas):''}</p>
-    <table><thead><tr><th>Producto</th><th>Cant.</th><th>Costo</th><th>Subtotal</th></tr></thead><tbody>${its.map(i=>`<tr><td>${escapeHtml((state.productos.find(p=>p.id===i.producto_id)||{}).nombre||'—')}</td><td>${i.cantidad}</td><td>${moneda(i.costo_unitario)}</td><td>${moneda(i.cantidad*i.costo_unitario)}</td></tr>`).join('')}</tbody></table>
+    <table><thead><tr><th>Producto</th><th>Cant.</th><th>Costo</th><th>Subtotal</th></tr></thead><tbody>${its.map(i=>`<tr><td>${escapeHtml(((state.productos.find(p=>p.id===i.producto_id)||(state.archivados||[]).find(p=>p.id===i.producto_id)||{}).nombre)||'—')}</td><td>${i.cantidad}</td><td>${moneda(i.costo_unitario)}</td><td>${moneda(i.cantidad*i.costo_unitario)}</td></tr>`).join('')}</tbody></table>
     <p><strong>Total ${moneda(c.total)}</strong> · pagado ${moneda(c.pagado)}</p><div class="modal-actions"><button class="btn" id="m-cancel">Cerrar</button></div>`,
   ()=>document.getElementById('m-cancel').addEventListener('click',closeModal));
 }
@@ -1457,7 +1491,7 @@ function openModalCompra(c,pre){
 /* ============================= MOVIMIENTOS DE STOCK ============================= */
 function renderMovStock(){
   const lista=state.movs.filter(m=>state.filtroMov==='todos'||m.tipo===state.filtroMov);
-  const filas=lista.map(m=>`<tr><td>${fecha(m.fecha)}</td><td>${escapeHtml((state.productos.find(p=>p.id===m.producto_id)||{}).nombre||'—')}</td><td>${TIPO_MOV[m.tipo]||m.tipo}</td>
+  const filas=lista.map(m=>`<tr><td>${fecha(m.fecha)}</td><td>${escapeHtml(((state.productos.find(p=>p.id===m.producto_id)||(state.archivados||[]).find(p=>p.id===m.producto_id)||{}).nombre)||'—')}</td><td>${TIPO_MOV[m.tipo]||m.tipo}</td>
     <td style="font-weight:700;color:${m.cantidad>0?'var(--teal)':'var(--red)'}">${m.cantidad>0?'+':''}${m.cantidad}</td><td>${m.stock_resultante}</td><td>${escapeHtml(m.usuario||'')}</td><td>${escapeHtml(m.motivo||'')}</td></tr>`).join('');
   return `<div class="page-header"><div><h2>Movimientos de stock</h2><p>Registro inmutable de entradas, salidas, ajustes y pérdidas (últimos 300).</p></div>
     <div style="display:flex;gap:8px"><select id="f-mov"><option value="todos">Todos los tipos</option>${Object.keys(TIPO_MOV).map(t=>`<option value="${t}" ${t===state.filtroMov?'selected':''}>${TIPO_MOV[t]}</option>`).join('')}</select>
@@ -1554,7 +1588,7 @@ async function loadActividad(){
   state.actividad=data||[];state.actividadListo=true;
 }
 function eventosActividad(){
-  const ev=[],prod=id=>(state.productos.find(p=>p.id===id)||{}).nombre||'producto eliminado';
+  const ev=[],prod=id=>(state.productos.find(p=>p.id===id)||(state.archivados||[]).find(p=>p.id===id)||{}).nombre||'producto eliminado';
   (state.ventas||[]).forEach(v=>ev.push({f:v.fecha,t:'venta',i:'🧾',x:`Se registró venta #${v.numero} — ${moneda(v.total)}${v.medioPago?' ('+v.medioPago+')':''}`}));
   if(state.caja){
     ev.push({f:state.caja.fechaApertura,t:'caja',i:'🔓',x:`Se abrió caja (inicial ${moneda(state.caja.montoInicial)})`});
@@ -2503,17 +2537,8 @@ function bindProductos(){
     b.addEventListener('click', async ()=>{
       const id = b.dataset.del;
       const prod = state.productos.find(x=>x.id===id);
-      if(!confirm(`¿Eliminar "${prod?prod.nombre:'este producto'}"? No se puede deshacer.`)) return;
-      const ok = await deleteRow('productos', id);
-      if(!ok) return;
-      state.productos = state.productos.filter(p=>p.id!==id);
-      const comboAfectados = state.productos.filter(p=>p.esCombo && p.comboItems.some(ci=>ci.productoId===id));
-      if(comboAfectados.length>0){
-        comboAfectados.forEach(p=>{ p.comboItems = p.comboItems.filter(ci=>ci.productoId!==id); });
-        await saveProductos();
-      }
-      render();
-      showToast('Producto eliminado.');
+      if(!confirm(`¿Eliminar "${prod?prod.nombre:'este producto'}"?`)) return;
+      if(await eliminarProducto(id)) render();
     });
   });
   document.querySelectorAll('[data-stock]').forEach(b=>{

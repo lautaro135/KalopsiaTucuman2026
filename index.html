@@ -1212,8 +1212,19 @@ async function saveCaja(){
   if(error){console.error(error);showToast('Error guardando caja.');return false} return true;
 }
 async function deleteRow(table,id){
-  const {error}=await supabaseClient.from(table).delete().eq('id',id);
-  if(error){console.error(error);showToast('No se pudo eliminar.');return false} return true;
+  const {data,error}=await supabaseClient.from(table).delete().eq('id',id).select('id');
+  if(error){
+    console.error('deleteRow',table,error);
+    if(error.code==='23503') showToast('No se puede eliminar: tiene ventas, compras o movimientos de stock asociados.');
+    else showToast('No se pudo eliminar: '+(error.message||'error desconocido'));
+    return false;
+  }
+  if(!data||data.length===0){
+    console.error('deleteRow: 0 filas borradas (probable política RLS sin permiso DELETE)',table,id);
+    showToast('No se eliminó nada en la base de datos. Falta permiso de DELETE (RLS) en Supabase.');
+    return false;
+  }
+  return true;
 }
 
 /* ============================= PROVEEDORES / COMPRAS / MOVIMIENTOS DE STOCK ============================= */
@@ -2491,6 +2502,8 @@ function bindProductos(){
   document.querySelectorAll('[data-del]').forEach(b=>{
     b.addEventListener('click', async ()=>{
       const id = b.dataset.del;
+      const prod = state.productos.find(x=>x.id===id);
+      if(!confirm(`¿Eliminar "${prod?prod.nombre:'este producto'}"? No se puede deshacer.`)) return;
       const ok = await deleteRow('productos', id);
       if(!ok) return;
       state.productos = state.productos.filter(p=>p.id!==id);

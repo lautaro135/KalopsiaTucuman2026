@@ -1106,6 +1106,7 @@ const state = {
   comboItemsDraft: [],
   busquedaVender: '',
   busquedaProductos: '',
+  mostrarArchivados: false,
   filtroVentas: 'hoy',
   filtroRubro: 'hoy',
   rubroDesde: '',
@@ -1132,10 +1133,11 @@ function calcularAjuste(subtotal, tipo, pctRaw){
   const total = Math.max(0, subtotal+monto);
   return {pct:pctClamp, monto, total};
 }
+function productoActivo(p){ return !!p && p.activo !== false; }
 function buscarPorCodigo(codigo){
   const c = (codigo||'').trim();
   if(!c) return null;
-  return state.productos.find(p=>p.codigoBarras && p.codigoBarras===c) || null;
+  return state.productos.find(p=>productoActivo(p) && p.codigoBarras && p.codigoBarras===c) || null;
 }
 function coincideBusqueda(p, query){
   const q = normalizarTexto(query).trim();
@@ -1175,7 +1177,7 @@ async function loadAll(){
     ]);
     for(const x of [rb,pr,cj,ve,mv,hi]) if(x.error) throw x.error;
     state.rubros=(rb.data||[]).map(r=>({id:r.id,nombre:r.nombre}));
-    state.productos=(pr.data||[]).map(p=>({id:p.id,nombre:p.nombre,precio:Number(p.precio),stock:Number(p.stock),rubroId:p.rubro_id,codigoBarras:p.codigo_barras||'',esCombo:!!p.es_combo,comboItems:p.combo_items||[]}));
+    state.productos=(pr.data||[]).map(p=>({id:p.id,nombre:p.nombre,precio:Number(p.precio),stock:Number(p.stock),rubroId:p.rubro_id,codigoBarras:p.codigo_barras||'',esCombo:!!p.es_combo,comboItems:p.combo_items||[],activo:p.activo!==false}));
     const c=(cj.data||[])[0];
     state.caja=c?{id:c.id,fechaApertura:c.fecha_apertura,montoInicial:Number(c.monto_inicial),
       movimientos:(mv.data||[]).filter(m=>m.caja_id===c.id).map(m=>({id:m.id,tipo:m.tipo,monto:Number(m.monto),motivo:m.motivo,fecha:m.fecha}))}:null;
@@ -1187,7 +1189,7 @@ async function loadAll(){
   }catch(e){ console.error(e); showToast('No se pudieron cargar los datos de Supabase.'); }
 }
 async function saveProductos(){
-  const {error}=await supabaseClient.from('productos').upsert(state.productos.map(p=>({id:p.id,nombre:p.nombre,precio:p.precio,...(state.moduloListo?{}:{stock:p.stock}),rubro_id:p.rubroId,codigo_barras:p.codigoBarras||null,es_combo:!!p.esCombo,combo_items:p.comboItems||[]})));
+  const {error}=await supabaseClient.from('productos').upsert(state.productos.map(p=>({id:p.id,nombre:p.nombre,precio:p.precio,...(state.moduloListo?{}:{stock:p.stock}),rubro_id:p.rubroId,codigo_barras:p.codigoBarras||null,es_combo:!!p.esCombo,combo_items:p.comboItems||[],activo:p.activo!==false})));
   if(error){console.error(error);showToast('Error guardando productos.');return false}
   if(state.moduloListo){
     // Cambios manuales de stock (+/-, edición, importación, stock inicial) => movimiento 'ajuste' relativo en el ledger
@@ -1401,7 +1403,7 @@ function verCompra(c){
 }
 function openModalCompra(c,pre){
   if(!state.proveedores.length){showToast('Primero cargá un proveedor.');return;}
-  const prods=state.productos.filter(p=>!p.esCombo);
+  const prods=state.productos.filter(p=>productoActivo(p)&&!p.esCombo);
   if(!prods.length){showToast('Primero cargá productos.');return;}
   const items=c?state.compraItems.filter(i=>i.compra_id===c.id):[pre?{producto_id:pre.producto_id}:{}];
   const row=it=>`<div class="ci-row" style="display:grid;grid-template-columns:1fr 70px 100px 30px;gap:6px;margin-bottom:6px"><select class="ci-prod">${optsHtml(prods,it.producto_id||'',p=>p.id,p=>p.nombre)}</select><input class="ci-cant" type="number" min="1" step="1" value="${it.cantidad||1}"><input class="ci-costo" type="number" min="0" step="0.01" placeholder="Costo" value="${it.costo_unitario!=null?it.costo_unitario:(state.costoUlt[it.producto_id||prods[0].id]??'')}"><button type="button" class="btn btn-sm ci-del">&times;</button></div>`;
@@ -1459,7 +1461,7 @@ function bindMovStock(){
   document.getElementById('btn-nuevo-mov').addEventListener('click',openModalMovStock);
 }
 function openModalMovStock(){
-  const prods=state.productos.filter(p=>!p.esCombo);
+  const prods=state.productos.filter(p=>productoActivo(p)&&!p.esCombo);
   if(!prods.length){showToast('Primero cargá productos.');return;}
   const tipos=['entrada_devolucion','salida_merma','perdida_rotura','perdida_vencimiento','perdida_robo','ajuste'];
   openModal(`<h3>Nuevo movimiento de stock</h3>
@@ -1489,7 +1491,7 @@ function ultimoProveedorDe(prodId){
 }
 function renderStockBajo(){
   const u=getUmbral();
-  const lista=state.productos.filter(p=>!p.esCombo&&p.stock<=u).sort((a,b)=>a.stock-b.stock||a.nombre.localeCompare(b.nombre));
+  const lista=state.productos.filter(p=>productoActivo(p)&&!p.esCombo&&p.stock<=u).sort((a,b)=>a.stock-b.stock||a.nombre.localeCompare(b.nombre));
   const ag=lista.filter(p=>p.stock<=0).length;
   const filas=lista.map(p=>{
     const r=state.rubros.find(x=>x.id===p.rubroId), pv=ultimoProveedorDe(p.id), cu=state.costoUlt[p.id];
@@ -1882,7 +1884,7 @@ function renderVender(){
   }
 
   const rubrosDisponibles = state.rubros;
-  const productosFiltrados = state.productos.filter(p=>{
+  const productosFiltrados = state.productos.filter(p=>productoActivo(p)).filter(p=>{
     if(state.rubroFiltro==='todos') return true;
     if(state.rubroFiltro==='sin-rubro') return !p.rubroId;
     return p.rubroId === state.rubroFiltro;
@@ -2370,12 +2372,13 @@ function renderProductos(){
     <div class="page-header">
       <div><h2>Productos</h2><p>Cargá tus productos, precios, stock y combos/promos.</p></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn" id="btn-ver-archivados">${state.mostrarArchivados?'Ver activos':'Archivados ('+state.productos.filter(p=>!productoActivo(p)).length+')'}</button>
         <button class="btn" id="btn-importar-excel">Importar Excel</button>
         <button class="btn" id="btn-nuevo-combo">Nuevo combo/promo</button>
         <button class="btn btn-primary" id="btn-nuevo-producto">Nuevo producto</button>
       </div>
     </div>
-    ${state.productos.length>0 ? `
+    ${state.productos.filter(p=>productoActivo(p)).length>0 ? `
       <div class="scan-bar" style="margin-bottom:16px;">
         <span class="scan-icon">&#128269;</span>
         <input type="text" id="buscar-productos" class="scan-input" placeholder="Buscar por nombre o código de barras..." autocomplete="off" value="${escapeHtml(state.busquedaProductos)}">
@@ -2387,14 +2390,14 @@ function renderProductos(){
         <span style="color:var(--ink-soft);font-size:12.5px;">unid.</span>
       </div>
     ` : ''}
-    ${state.productos.length===0 ? `
+    ${state.productos.filter(p=>productoActivo(p)).length===0 && !state.mostrarArchivados ? `
       <div class="empty-state">
         <h3>Todavía no cargaste productos</h3>
         <p>Agregá tu primer producto con nombre, precio y stock inicial.</p>
         <button class="btn btn-primary" id="btn-nuevo-producto-2">Nuevo producto</button>
       </div>
     ` : (()=>{
-      const productosFiltrados = state.productos.filter(p=>coincideBusqueda(p, state.busquedaProductos));
+      const productosFiltrados = state.productos.filter(p=>state.mostrarArchivados?!productoActivo(p):productoActivo(p)).filter(p=>coincideBusqueda(p, state.busquedaProductos));
       if(productosFiltrados.length===0){
         return `<div class="empty-state"><h3>Sin resultados</h3><p>No encontramos productos que coincidan con "${escapeHtml(state.busquedaProductos)}".</p></div>`;
       }
@@ -2407,7 +2410,7 @@ function renderProductos(){
               const rubro = state.rubros.find(r=>r.id===p.rubroId);
               const disp = stockDisponible(p);
               const agotado = disp<=0, bajo=!agotado && disp<=3;
-              const stockCell = p.esCombo ? `
+              const stockCell = !productoActivo(p) ? `<span class="mono">${disp}</span>` : p.esCombo ? `
                 <div class="stock-inline">
                   <span class="mono">${disp}</span>
                   ${agotado?'<span class="badge agotado">Sin stock</span>':bajo?'<span class="badge bajo">Stock bajo</span>':''}
@@ -2426,14 +2429,14 @@ function renderProductos(){
               `;
               return `
                 <tr>
-                  <td>${escapeHtml(p.nombre)}${p.esCombo?' <span class="combo-tag">Combo</span>':''}</td>
+                  <td>${escapeHtml(p.nombre)}${p.esCombo?' <span class="combo-tag">Combo</span>':''}${!productoActivo(p)?' <span class="badge bajo">Archivado</span>':''}</td>
                   <td class="mono" style="font-size:12px;">${p.codigoBarras?escapeHtml(p.codigoBarras):'—'}</td>
                   <td>${rubro?escapeHtml(rubro.nombre):'—'}</td>
                   <td class="mono">${money(p.precio)}</td>
                   <td>${stockCell}</td>
                   <td>
                     <button class="btn btn-sm" data-edit="${p.id}">Editar</button>
-                    <button class="btn btn-sm btn-danger" data-del="${p.id}">Eliminar</button>
+                    ${productoActivo(p)?`<button class="btn btn-sm btn-danger" data-archive="${p.id}">Archivar</button>`:`<button class="btn btn-sm" data-restore="${p.id}">Reactivar</button>`}
                   </td>
                 </tr>
               `;
@@ -2455,6 +2458,8 @@ function bindProductos(){
   if(b3) b3.addEventListener('click', ()=>openModalProducto(null, true));
   const bImport = document.getElementById('btn-importar-excel');
   if(bImport) bImport.addEventListener('click', openModalImportarExcel);
+  const verArchivados = document.getElementById('btn-ver-archivados');
+  if(verArchivados) verArchivados.addEventListener('click',()=>{state.mostrarArchivados=!state.mostrarArchivados;state.busquedaProductos='';render();});
   const buscarProdInput = document.getElementById('buscar-productos');
   if(buscarProdInput){
     buscarProdInput.addEventListener('input', ()=>{
@@ -2488,56 +2493,44 @@ function bindProductos(){
       openModalProducto(p);
     });
   });
-  document.querySelectorAll('[data-del]').forEach(b=>{
+  document.querySelectorAll('[data-archive]').forEach(b=>{
     b.addEventListener('click', async ()=>{
-      const id = b.dataset.del;
-      const producto = state.productos.find(p=>String(p.id)===String(id));
-      if(!producto) {
-        showToast('No se encontró el producto en la lista. Actualizá la pantalla e intentá nuevamente.');
-        return;
-      }
-      if(!confirm(`¿Eliminar definitivamente "${producto.nombre}"? Esta acción no se puede deshacer.`)) return;
-
-      b.disabled = true;
-      b.textContent = 'Eliminando…';
+      const id=b.dataset.archive;
+      const producto=state.productos.find(p=>String(p.id)===String(id));
+      if(!producto) return;
+      if(!confirm(`¿Archivar "${producto.nombre}"? Se ocultará de ventas y compras, pero conservará su historial y movimientos de stock.`)) return;
+      b.disabled=true;b.textContent='Archivando…';
       try{
-        // SELECT posterior para comprobar que Supabase realmente eliminó una fila.
-        const {data,error} = await supabaseClient
-          .from('productos')
-          .delete()
-          .eq('id', id)
-          .select('id');
-
+        const {data,error}=await supabaseClient.from('productos').update({activo:false}).eq('id',id).select('id');
         if(error) throw error;
-        if(!data || data.length===0){
-          throw new Error('Supabase no eliminó ninguna fila. Revisá las políticas RLS (DELETE) de la tabla productos y que el usuario tenga permisos.');
+        if(!data||!data.length) throw new Error('No se pudo actualizar el producto. Verificá los permisos UPDATE de la tabla productos en Supabase.');
+        producto.activo=false;
+        // Los combos que dependen de este artículo también se archivan para evitar ventas con componentes inactivos.
+        const combos=state.productos.filter(p=>productoActivo(p)&&p.esCombo&&(p.comboItems||[]).some(ci=>String(ci.productoId)===String(id)));
+        for(const combo of combos){
+          const {error:errCombo}=await supabaseClient.from('productos').update({activo:false}).eq('id',combo.id);
+          if(errCombo) console.warn('No se pudo archivar el combo dependiente:',errCombo);
+          else combo.activo=false;
         }
-
-        // Actualizar combos que tenían asociado el producto eliminado.
-        const comboAfectados = state.productos.filter(p=>
-          String(p.id)!==String(id) &&
-          p.esCombo &&
-          (p.comboItems||[]).some(ci=>String(ci.productoId)===String(id))
-        );
-        state.productos = state.productos.filter(p=>String(p.id)!==String(id));
-        comboAfectados.forEach(p=>{
-          p.comboItems = (p.comboItems||[]).filter(ci=>String(ci.productoId)!==String(id));
-        });
-
-        if(comboAfectados.length){
-          const guardado = await saveProductos();
-          if(!guardado) showToast('Producto eliminado, pero no se pudieron actualizar todos los combos.');
-        }
-
-        render();
-        showToast(`"${producto.nombre}" fue eliminado correctamente.`);
+        render();showToast(`"${producto.nombre}" fue archivado. Se conservó su historial.`);
       }catch(error){
-        console.error('Error al eliminar producto:', error);
-        const detalle = error && (error.message || error.details || error.hint);
-        showToast(detalle ? `No se pudo eliminar: ${detalle}` : 'No se pudo eliminar el producto. Revisá los permisos de Supabase.');
-        b.disabled = false;
-        b.textContent = 'Eliminar';
+        console.error('Error al archivar producto:',error);
+        showToast(`No se pudo archivar: ${error.message||'revisá los permisos de Supabase'}`);
+        b.disabled=false;b.textContent='Archivar';
       }
+    });
+  });
+  document.querySelectorAll('[data-restore]').forEach(b=>{
+    b.addEventListener('click',async()=>{
+      const id=b.dataset.restore,producto=state.productos.find(p=>String(p.id)===String(id));
+      if(!producto)return;
+      b.disabled=true;b.textContent='Reactivando…';
+      try{
+        const {data,error}=await supabaseClient.from('productos').update({activo:true}).eq('id',id).select('id');
+        if(error)throw error;
+        if(!data||!data.length)throw new Error('No se pudo reactivar. Verificá los permisos UPDATE de Supabase.');
+        producto.activo=true;render();showToast(`"${producto.nombre}" volvió a estar activo.`);
+      }catch(error){console.error(error);showToast(`No se pudo reactivar: ${error.message||''}`);b.disabled=false;b.textContent='Reactivar';}
     });
   });
   document.querySelectorAll('[data-stock]').forEach(b=>{
@@ -2562,7 +2555,7 @@ function bindProductos(){
 }
 
 function renderComboItemsDraft(){
-  const posibles = state.productos.filter(p=>!p.esCombo);
+  const posibles = state.productos.filter(p=>productoActivo(p)&&!p.esCombo);
   return `
     <div class="field">
       <label>Productos que componen el combo</label>

@@ -290,6 +290,9 @@
 .receipt .ticket-cliente { color:#172033 !important; }
 .receipt .ticket-cliente strong { color:#0f172a !important; }
 
+
+/* ---------- ASISTENTE ---------- */
+.assistant-wrap{max-width:980px;margin:0 auto}.assistant-hero{background:linear-gradient(135deg,#102c35,#17695e);color:#fff;border-radius:18px;padding:24px;margin-bottom:16px;display:flex;align-items:center;gap:16px}.assistant-avatar{width:52px;height:52px;border-radius:16px;background:rgba(255,255,255,.14);display:grid;place-items:center;font-size:27px;flex:0 0 auto}.assistant-hero h2{color:#fff!important;font-size:23px}.assistant-hero p{color:#e2f0eb!important;margin-top:5px}.assistant-chat{background:#fff;border:1px solid #e4e8e6;border-radius:16px;overflow:hidden;box-shadow:0 8px 28px rgba(15,35,40,.06)}.assistant-messages{height: min(52vh,500px);min-height:300px;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:12px;background:#fbfcfb}.assistant-msg{max-width:82%;padding:12px 14px;border-radius:14px;font-size:13px;white-space:pre-wrap;line-height:1.55}.assistant-msg.bot{align-self:flex-start;background:#edf4f1;color:#1c3430;border-bottom-left-radius:4px}.assistant-msg.user{align-self:flex-end;background:#17695e;color:white;border-bottom-right-radius:4px}.assistant-time{display:block;font-size:10px;opacity:.65;margin-top:5px}.assistant-suggestions{display:flex;gap:8px;flex-wrap:wrap;padding:12px 16px;border-top:1px solid #edf0ef}.assistant-suggestions button{border:1px solid #d7e4df;background:#fff;color:#17695e;border-radius:999px;padding:7px 11px;font-size:11px}.assistant-compose{display:flex;gap:10px;padding:14px 16px;border-top:1px solid #edf0ef}.assistant-compose input{flex:1;min-width:0;border:1px solid #d8e0dc;border-radius:10px;padding:12px;font-size:13px}.assistant-compose button{border:0;border-radius:10px;background:#17695e;color:white;padding:0 18px;font-weight:700}.assistant-note{font-size:11px;color:#7a8790;padding:0 16px 14px}.assistant-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}.assistant-kpi{background:#fff;border:1px solid #e4e8e6;border-radius:12px;padding:13px}.assistant-kpi span{display:block;font-size:11px;color:#718078}.assistant-kpi strong{display:block;font-size:19px;margin-top:3px;color:#193c35}@media(max-width:600px){.assistant-hero{padding:18px}.assistant-kpis{grid-template-columns:1fr}.assistant-msg{max-width:92%}.assistant-compose{padding:10px}.assistant-compose button{padding:0 13px}}
 </style>
 
 <style id="modern-frontend-v1">
@@ -1599,6 +1602,7 @@ const NAV = [
   {id:'actividad', label:'Actividad', icon:'&#128338;'},
   {id:'rubros', label:'Rubros', icon:'&#127991;'},
   {id:'historial', label:'Historial', icon:'&#128203;'},
+  {id:'asistente', label:'Asistente', icon:'&#129302;'},
 ];
 
 function setView(v){
@@ -1644,6 +1648,43 @@ function bindGlobal(){
   });
 }
 
+function renderAsistente(){
+  const totalProductos = state.productos.length;
+  const stockBajo = state.productos.filter(p => Number(p.stock||0) <= Number(p.stockMinimo||0)).length;
+  const totalVentas = state.ventas.length;
+  const hoy = new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'});
+  const saludo = new Date().getHours()<12?'¡Buenos días!':(new Date().getHours()<20?'¡Buenas tardes!':'¡Buenas noches!');
+  return `<div class="assistant-wrap">
+    <div class="page-header"><div><h2>Asistente de Kalopsia</h2><p>Tu compañero para consultar y organizar el negocio.</p></div></div>
+    <div class="assistant-hero"><div class="assistant-avatar">✦</div><div><h2>${saludo} ¿En qué te ayudo?</h2><p>Hoy es ${hoy}. Puedo orientarte con el stock, las ventas y la gestión diaria.</p></div></div>
+    <div class="assistant-kpis"><div class="assistant-kpi"><span>Productos cargados</span><strong>${totalProductos}</strong></div><div class="assistant-kpi"><span>Productos con stock bajo*</span><strong>${stockBajo}</strong></div><div class="assistant-kpi"><span>Ventas cargadas</span><strong>${totalVentas}</strong></div></div>
+    <div class="assistant-chat"><div class="assistant-messages" id="assistantMessages"><div class="assistant-msg bot">Hola, soy el asistente de Kalopsia. Puedo ayudarte a revisar información del sistema y darte ideas para gestionar mejor tu negocio.<span class="assistant-time">Asistente · ahora</span></div></div>
+    <div class="assistant-suggestions"><button type="button" data-assistant-suggest="¿Qué productos tienen stock bajo?">Revisar stock bajo</button><button type="button" data-assistant-suggest="Dame un resumen de mis ventas">Resumen de ventas</button><button type="button" data-assistant-suggest="¿Cómo puedo organizar mejor mi negocio?">Consejos para el negocio</button></div>
+    <form class="assistant-compose" id="assistantForm"><input id="assistantInput" autocomplete="off" placeholder="Escribí tu consulta..."/><button type="submit">Enviar</button></form><div class="assistant-note">*El stock bajo se calcula con el stock mínimo configurado en cada producto. Este asistente responde con información disponible en esta pantalla; no está conectado a un servicio externo de IA.</div></div>
+  </div>`;
+}
+function respuestaAsistente(q){
+  const t=q.toLowerCase();
+  const bajos=state.productos.filter(p=>Number(p.stock||0)<=Number(p.stockMinimo||0));
+  if(t.includes('stock')||t.includes('agot')) return bajos.length ? `Encontré ${bajos.length} producto(s) con stock bajo:
+${bajos.slice(0,12).map(p=>`• ${p.nombre}: ${p.stock||0} unidades (mínimo ${p.stockMinimo||0})`).join('
+')}
+
+Podés abrir “Stock bajo” para revisar el listado completo.` : '¡Bien! No encuentro productos por debajo de su stock mínimo configurado.';
+  if(t.includes('venta')||t.includes('resumen')) return `Hay ${state.ventas.length} ventas cargadas en el sistema. Para ver importes, fechas y medios de pago, entrá en la pestaña Ventas o Dashboard.`;
+  if(t.includes('producto')) return `Tenés ${state.productos.length} productos cargados. Desde Productos podés buscar, editar y administrar tu catálogo.`;
+  if(t.includes('buenos días')||t.includes('hola')||t.includes('buenas')) return '¡Hola! Me alegra acompañarte. ¿Querés revisar el stock, consultar las ventas o pensar mejoras para Kalopsia?';
+  if(t.includes('organizar')||t.includes('consejo')||t.includes('mejorar')) return 'Te recomiendo empezar cada día revisando tres cosas: 1) productos con stock bajo, 2) cuentas por pagar y vencimientos, y 3) ventas del día. Después priorizá reponer los productos de mayor salida y registrar cada compra para mantener actualizado el inventario.';
+  return 'Puedo ayudarte con consultas sobre productos, stock, ventas y organización del negocio. Probá preguntarme “¿Qué productos tienen stock bajo?” o “Dame un resumen de mis ventas”.';
+}
+function bindAsistente(){
+  const form=document.getElementById('assistantForm'); const input=document.getElementById('assistantInput'); const box=document.getElementById('assistantMessages');
+  if(!form||!input||!box)return;
+  const enviar=(q)=>{q=(q||'').trim();if(!q)return;const user=document.createElement('div');user.className='assistant-msg user';user.textContent=q;box.appendChild(user);const bot=document.createElement('div');bot.className='assistant-msg bot';bot.textContent=respuestaAsistente(q);box.appendChild(bot);box.scrollTop=box.scrollHeight;input.value='';input.focus();};
+  form.addEventListener('submit',e=>{e.preventDefault();enviar(input.value);});
+  document.querySelectorAll('[data-assistant-suggest]').forEach(b=>b.addEventListener('click',()=>enviar(b.dataset.assistantSuggest)));
+}
+
 function renderView(){
   switch(state.view){
     case 'dashboard': return renderDashboard();
@@ -1661,6 +1702,7 @@ function renderView(){
     case 'actividad': return renderActividad();
     case 'rubros': return renderRubros();
     case 'historial': return renderHistorial();
+    case 'asistente': return renderAsistente();
     default: return '';
   }
 }
@@ -1682,6 +1724,7 @@ function bindView(){
     case 'actividad': return bindActividad();
     case 'rubros': return bindRubros();
     case 'historial': return bindHistorial();
+    case 'asistente': return bindAsistente();
   }
 }
 
